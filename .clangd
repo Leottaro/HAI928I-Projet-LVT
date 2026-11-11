@@ -1,0 +1,8 @@
+Index:
+  Background: Build
+Style:
+  AngledHeaders: ".*"
+  QuotedHeaders: "include/.*|src/.*"
+Diagnostics:
+  ClangTidy:
+    FastCheckFilter: Loose
