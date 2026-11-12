@@ -108,7 +108,7 @@ private:
 
     inline void updateRenderingData() {
         m_projection.setToIdentity();
-        m_projection.perspective(m_fovy, m_aspect_ratio, m_near_far[0], m_near_far[1]);
+        m_projection.perspective(qRadiansToDegrees(m_fovy), m_aspect_ratio, m_near_far[0], m_near_far[1]);
         m_view.setToIdentity();
         m_view.lookAt(m_cam_pos, m_cam_pos + m_front, m_real_up);
     }
@@ -204,6 +204,8 @@ public slots:
     }
 
     inline void onkeyPress(QKeyEvent* _event, float _delta_time) {
+        if (m_type != ControlType::FreeCam)
+            return;
         int key = _event->key();
         QVector3D motion = QVector3D(static_cast<int>(key == Qt::Key::Key_Space) - static_cast<int>(key == Qt::Key::Key_Control),
                                      static_cast<int>(key == Qt::Key::Key_D) - static_cast<int>(key == Qt::Key::Key_A),
@@ -212,7 +214,6 @@ public slots:
             motion.normalize();
         QVector3D flat_front = QVector3D::crossProduct(VEC_UP, m_right);
         m_cam_pos += _delta_time * m_free_cam_speed * (motion.x() * VEC_UP + motion.y() * m_right + motion.z() * flat_front);
-
         applyPosConstraint();
         updateRenderingData();
     }
@@ -225,7 +226,7 @@ public slots:
         if (y_delta == 0)
             return;
 
-        int new_zoom = y_delta < 0 ? m_distance_to_center * m_zoom_rate : m_distance_to_center / m_zoom_rate;
+        float new_zoom = y_delta > 0 ? m_distance_to_center * m_zoom_rate : m_distance_to_center / m_zoom_rate;
         if (new_zoom < m_zoom_range.x()) {
             new_zoom = m_zoom_range.x();
         } else if (new_zoom > m_zoom_range.y()) {
@@ -235,20 +236,17 @@ public slots:
 
         clampOrientation(m_cam_orientation);
         getViewVectors(m_cam_orientation, m_front, m_right, m_real_up);
-
         applyPosConstraint();
         updateRenderingData();
     }
 
-    inline void onMouseMove(QMouseEvent* _event, float _delta_time) {
+    inline void onMouseMove(const QVector2D& _mouse_vel, float _delta_time) {
         if (m_disable_mouse_actions)
             return;
 
-        const QEventPoint& last_point = _event->points().last();
-        QVector2D vel(last_point.globalPosition() - last_point.globalLastPosition());
         float rotation_speed = _delta_time * m_rotation_speed;
-        m_cam_orientation.setX(m_cam_orientation.x() - rotation_speed * vel.y());
-        m_cam_orientation.setY(m_cam_orientation.y() - rotation_speed * vel.x());
+        m_cam_orientation.setX(m_cam_orientation.x() - rotation_speed * _mouse_vel.y());
+        m_cam_orientation.setY(m_cam_orientation.y() - rotation_speed * _mouse_vel.x());
 
         clampOrientation(m_cam_orientation);
         getViewVectors(m_cam_orientation, m_front, m_right, m_real_up);

@@ -1,5 +1,9 @@
 #include "glScene.hpp"
 
+#include <cstdlib>
+#include <qnamespace.h>
+#include <vector>
+
 #include <QtCore/QCoreApplication>
 #include <QtGui/QMouseEvent>
 #include <QtOpenGL/QOpenGLShaderProgram>
@@ -7,11 +11,13 @@
 
 GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_program(nullptr), m_camera() {
     setParent(parent);
+    setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
 
     m_core = QSurfaceFormat::defaultFormat().profile() == QSurfaceFormat::CoreProfile;
 
     m_camera.onAspectRatioChange(static_cast<float>(width()) / height());
-
+    m_last_frame.start();
     // if (m_transparent) {
     //     QSurfaceFormat fmt = format();
     //     fmt.setAlphaBufferSize(8);
@@ -29,7 +35,7 @@ QSize GLScene::minimumSizeHint() const {
 }
 
 QSize GLScene::sizeHint() const {
-    return QSize(400, 400);
+    return QSize(1280, 720);
 }
 
 void GLScene::initializeGL() {
@@ -44,7 +50,7 @@ void GLScene::initializeGL() {
         close();
 
     // Compile fragment shader
-    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, "./shaders/viewport_texture.frag"))
+    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, "./shaders/ray_traversal.frag"))
         close();
 
     // Link shader pipeline
@@ -55,19 +61,36 @@ void GLScene::initializeGL() {
     if (!m_program->bind())
         close();
 
-    // TODO: Initialize object GL
+    // Grid
+    std::vector<float> truc(32 * 32 * 32);
+    for (uint i = 0; i < truc.size(); i++)
+        truc[i] = static_cast<float>(rand()) / RAND_MAX;
+    glGenBuffers(1, &m_grid_ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, truc.size() * sizeof(float), truc.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
+    // glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, truc.size() * sizeof(float), truc.data());
 
     m_program->release();
 }
 
 void GLScene::paintGL() {
-    quint64 current_frame = time(nullptr);
-    m_last_frame = current_frame;
+    m_last_frame.restart();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
 
     m_program->bind();
+
+    glUniform3ui(m_program->uniformLocation("grid_size"), 32, 32, 32);
+    m_program->setUniformValue("grid_pos", -0.5f, -0.5f, -0.5f);
+    m_program->setUniformValue("grid_cell_dims", 1. / 32.f, 1. / 32.f, 1. / 32.f);
+
+    m_program->setUniformValue("near_plane", m_camera.m_near_far.x());
+    m_program->setUniformValue("cam_pos", m_camera.m_cam_pos);
+    m_program->setUniformValue("viewproj_inverse", (m_camera.getProjection() * m_camera.getView()).inverted());
+    m_program->setUniformValue("n_samples", GLuint(1));
+    m_program->setUniformValue("inv_screen", QVector2D{1.f / size().width(), 1.f / size().height()});
 
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
@@ -87,13 +110,55 @@ void GLScene::cleanupGL() {
 }
 
 void GLScene::keyPressEvent(QKeyEvent *_event) {
-    float delta_time = static_cast<float>(time(nullptr) - m_last_frame) * 1.e-4f;
-    m_camera.onkeyPress(_event, delta_time);
+    if (_event->isAutoRepeat())
+        return;
+    switch (_event->key()) {
+    case Qt::Key::Key_F11:
+        if (isFullScreen()) {
+            showNormal();
+        } else {
+            showFullScreen();
+        }
+        update();
+        break;
+    case Qt::Key::Key_C:
+        m_camera.CycleType();
+        update();
+        break;
+    default:
+        break;
+    }
 }
+
 void GLScene::wheelEvent(QWheelEvent *_event) {
     m_camera.onWheel(_event);
+    update();
+}
+
+void GLScene::mousePressEvent(QMouseEvent *_event) {
+    if (_event->button() == Qt::LeftButton) {
+        // grabMouse();
+        setCursor(Qt::BlankCursor);
+        m_has_last_mouse_pos = false;
+    }
+}
+void GLScene::mouseReleaseEvent(QMouseEvent *_event) {
+    if (_event->button() == Qt::LeftButton) {
+        // releaseMouse();
+        unsetCursor();
+        m_has_last_mouse_pos = false;
+    }
 }
 void GLScene::mouseMoveEvent(QMouseEvent *_event) {
-    float delta_time = static_cast<float>(time(nullptr) - m_last_frame) * 1.e-4f;
-    m_camera.onMouseMove(_event, delta_time);
+    QPointF pos = _event->position();
+    if (m_has_last_mouse_pos && _event->buttons() & Qt::MouseButton::LeftButton) {
+        QVector2D delta(pos - m_last_mouse_pos);
+        m_camera.onMouseMove(delta, getElapsedSec());
+        update();
+    }
+    m_last_mouse_pos = pos;
+    m_has_last_mouse_pos = true;
+}
+void GLScene::leaveEvent(QEvent *) {
+    m_has_last_mouse_pos = false;
 }
