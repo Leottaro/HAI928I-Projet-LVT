@@ -1,16 +1,14 @@
 #pragma once
 
-#include "glWidget.hpp"
+#include "glScene.hpp"
 
-#include <QMainWindow>
+#include <QtWidgets/QMainWindow>
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
 private:
-    QWidget* m_screen;
-
-    GLWidget* m_glwidget;
+    GLScene* m_scene;
 
 public:
     MainWindow();

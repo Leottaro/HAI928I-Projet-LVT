@@ -1,13 +1,11 @@
-#include "glWidget.hpp"
-
-#include "Camera.hpp"
+#include "glScene.hpp"
 
 #include <QtCore/QCoreApplication>
 #include <QtGui/QMouseEvent>
 #include <QtOpenGL/QOpenGLShaderProgram>
 #include <QtWidgets/QWidget>
 
-GLWidget::GLWidget(QWidget *parent) : QOpenGLWidget(parent), m_program(nullptr), m_camera() {
+GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_program(nullptr), m_camera() {
     setParent(parent);
 
     m_core = QSurfaceFormat::defaultFormat().profile() == QSurfaceFormat::CoreProfile;
@@ -21,21 +19,21 @@ GLWidget::GLWidget(QWidget *parent) : QOpenGLWidget(parent), m_program(nullptr),
     // }
 }
 
-GLWidget::~GLWidget() {
+GLScene::~GLScene() {
     disconnect(m_cleanup_connection);
     cleanupGL();
 }
 
-QSize GLWidget::minimumSizeHint() const {
+QSize GLScene::minimumSizeHint() const {
     return QSize(50, 50);
 }
 
-QSize GLWidget::sizeHint() const {
+QSize GLScene::sizeHint() const {
     return QSize(400, 400);
 }
 
-void GLWidget::initializeGL() {
-    m_cleanup_connection = connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &GLWidget::cleanupGL);
+void GLScene::initializeGL() {
+    m_cleanup_connection = connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &GLScene::cleanupGL);
 
     initializeOpenGLFunctions();
     glClearColor(0, 0, 0, 1);
@@ -62,7 +60,7 @@ void GLWidget::initializeGL() {
     m_program->release();
 }
 
-void GLWidget::paintGL() {
+void GLScene::paintGL() {
     quint64 current_frame = time(nullptr);
     m_last_frame = current_frame;
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -71,16 +69,16 @@ void GLWidget::paintGL() {
 
     m_program->bind();
 
-    // TODO:
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
     m_program->release();
 }
 
-void GLWidget::resizeGL(int w, int h) {
+void GLScene::resizeGL(int w, int h) {
     m_camera.onAspectRatioChange(static_cast<float>(w) / h);
 }
 
-void GLWidget::cleanupGL() {
+void GLScene::cleanupGL() {
     if (m_program == nullptr)
         return;
     makeCurrent();
@@ -88,14 +86,14 @@ void GLWidget::cleanupGL() {
     doneCurrent();
 }
 
-void GLWidget::keyPressEvent(QKeyEvent *_event) {
+void GLScene::keyPressEvent(QKeyEvent *_event) {
     float delta_time = static_cast<float>(time(nullptr) - m_last_frame) * 1.e-4f;
     m_camera.onkeyPress(_event, delta_time);
 }
-void GLWidget::wheelEvent(QWheelEvent *_event) {
+void GLScene::wheelEvent(QWheelEvent *_event) {
     m_camera.onWheel(_event);
 }
-void GLWidget::mouseMoveEvent(QMouseEvent *_event) {
+void GLScene::mouseMoveEvent(QMouseEvent *_event) {
     float delta_time = static_cast<float>(time(nullptr) - m_last_frame) * 1.e-4f;
     m_camera.onMouseMove(_event, delta_time);
 }

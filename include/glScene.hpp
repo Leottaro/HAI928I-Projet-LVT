@@ -9,10 +9,8 @@
 #include <QOpenGLShaderProgram>
 #include <QOpenGLWidget>
 
-using time_point = std::chrono::time_point<std::chrono::system_clock, std::chrono::duration<long, std::ratio<1, 1000000000>>>;
-
-class GLWidget : public QOpenGLWidget,
-                 protected QOpenGLFunctions {
+class GLScene : public QOpenGLWidget,
+                protected QOpenGLFunctions {
     Q_OBJECT
 
 private:
@@ -27,8 +25,8 @@ private:
     // TODO: RayTracingRenderer
 
 public:
-    GLWidget(QWidget *parent = 0);
-    ~GLWidget();
+    GLScene(QWidget *parent = 0);
+    ~GLScene();
 
     QSize minimumSizeHint() const override;
     QSize sizeHint() const override;

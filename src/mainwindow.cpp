@@ -1,12 +1,8 @@
 #include "mainWindow.hpp"
 
-#include "glWidget.hpp"
-
 MainWindow::MainWindow() {
-    m_screen = new QWidget(this);
-    setCentralWidget(m_screen);
+    m_scene = new GLScene(this);
 
-    m_glwidget = new GLWidget(this);
-
+    setCentralWidget(m_scene);
     setWindowTitle("Water voxel wowow");
 }

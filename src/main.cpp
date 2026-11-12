@@ -1,10 +1,10 @@
 #include "mainWindow.hpp"
 
-#include <QApplication>
-#include <QCommandLineOption>
-#include <QCommandLineParser>
-#include <QScreen>
-#include <QSurfaceFormat>
+#include <QtCore/QCommandLineOption>
+#include <QtCore/QCommandLineParser>
+#include <QtGui/QScreen>
+#include <QtGui/QSurfaceFormat>
+#include <QtWidgets/QApplication>
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
@@ -22,16 +22,7 @@ int main(int argc, char *argv[]) {
 
     MainWindow main_window;
     main_window.resize(main_window.sizeHint());
-    QScreen *screen = app.primaryScreen();
-    QRect screenGeometry = screen->geometry();
-    int height = screenGeometry.height();
-    int width = screenGeometry.width();
-    int desktopArea = width * height;
-    int widgetArea = main_window.width() * main_window.height();
-    if (((float) widgetArea / (float) desktopArea) < 0.75f)
-        main_window.show();
-    else
-        main_window.showMaximized();
+    main_window.show();
 
     return app.exec();
 }
