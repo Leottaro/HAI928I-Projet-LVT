@@ -14,6 +14,10 @@ case "$current_mode" in
         ;;
 esac
 
+if [ "$#" -gt 0 ]; then
+    shift
+fi
+
 echo "Building Cmake configurations..."
 mkdir -p build || exit 1
 for mode in Debug Release; do
@@ -34,7 +38,7 @@ echo "Compiling $current_mode project..."
 if make -j; then
     echo "Executing $current_mode project..."
     cd $working_dir
-    bin/projet3d ${@:2}
+    bin/projet3d "$@"
 else
     cd $working_dir
     exit 1
