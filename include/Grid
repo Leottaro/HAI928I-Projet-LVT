@@ -1,0 +1,422 @@
+#pragma once
+
+// GLM
+#include <glm/ext.hpp>
+#include <glm/glm.hpp>
+
+// USUAL INCLUDES
+#include <functional>
+#include <vector>
+
+template<typename T, typename CellData>
+concept RayData = requires(T&& ray_data, const glm::uvec3& pos, const CellData& cell) {
+    { ray_data.rayStep(pos, cell) } -> std::same_as<void>;
+    { ray_data.stopCondition(pos, cell) } -> std::same_as<bool>;
+};
+
+struct RayTraversalInfo {
+    glm::uvec3 start_cell_pos, end_cell_pos;
+    glm::vec3 tdelta, t;
+    glm::ivec3 step;
+};
+
+enum class RayTraversalType { Iterative, Parallel, MultithreadedParallel, MultithreadedIterative, GPU, __COUNT };
+static constexpr int NB_TRAVERSAL_TYPES = static_cast<int>(RayTraversalType::__COUNT);
+static constexpr const char* TRAVERSAL_TYPES_STR = "Iterative\0Parallel\0MultithreadedParallel\0MultithreadedIterative\0GPU\0";
+
+template<typename CellData>
+class GridBase {
+protected:
+    const glm::uvec3 m_size;
+    const size_t m_cell_number;
+    const MathHelpers::OrderingType m_ordering;
+    glm::vec3 m_dims;
+    glm::vec3 m_pos;
+    std::vector<CellData> m_data;
+
+    GLuint m_data_ssbo{0};
+
+    // https://www.researchgate.net/publication/2611491_A_Fast_Voxel_Traversal_Algorithm_for_Ray_Tracing
+    inline bool initRayTrace(const GeometryHelpers::Ray<float>& _ray, RayTraversalInfo& _infos) const {
+        // ScopedTimer timer(g_profile_frame.ray_marching_init);
+
+        AABB<float> grid_aabb{m_pos, m_pos + glm::vec3(m_size) * m_dims};
+        float t1, t2;
+        uint face1, face2;
+        if (!grid_aabb.intersectRay(_ray.origin, _ray.direction, t1, t2, face1, face2) || t2 < 0.f)
+            return false;
+
+        glm::vec3 start = t1 < 0.f ? _ray.origin : _ray.origin + t1 * _ray.direction;
+        glm::vec3 end = _ray.origin + t2 * _ray.direction;
+        _infos.start_cell_pos = posToCellPos(start);
+        _infos.end_cell_pos = posToCellPos(end);
+
+        for (int axis = 0; axis < 3; axis++) {
+            _infos.start_cell_pos[axis] = std::min(_infos.start_cell_pos[axis], m_size[axis] - 1);
+            _infos.end_cell_pos[axis] = std::min(_infos.end_cell_pos[axis], m_size[axis] - 1);
+
+            if (_ray.direction[axis] == 0.f) {
+                _infos.step[axis] = 0;
+                _infos.tdelta[axis] = _infos.t[axis] = std::numeric_limits<float>::infinity();
+            } else {
+                _infos.step[axis] = _ray.direction[axis] > 0.f ? 1 : -1;
+                _infos.tdelta[axis] = std::abs(m_dims[axis] / _ray.direction[axis]);
+
+                float cell_min = m_pos[axis] + _infos.start_cell_pos[axis] * m_dims[axis];
+                float next_boundary = cell_min + (_ray.direction[axis] > 0.f ? m_dims[axis] : 0.f);
+                _infos.t[axis] = (next_boundary - start[axis]) / _ray.direction[axis];
+            }
+        }
+
+        return true;
+    }
+    inline bool stepRayTrace(RayTraversalInfo& _infos) const {
+        // ScopedTimer timer(g_profile_frame.ray_marching_step);
+
+        uint8_t axis;
+        if (_infos.t.x < _infos.t.y && _infos.t.x < _infos.t.z)
+            axis = 0;
+        else if (_infos.t.y < _infos.t.z)
+            axis = 1;
+        else
+            axis = 2;
+        _infos.start_cell_pos[axis] += _infos.step[axis];
+        if (_infos.start_cell_pos[axis] >= m_size[axis])
+            return false;
+        _infos.t[axis] += _infos.tdelta[axis];
+        return true;
+    }
+
+public:
+    RayTraversalType m_traversal_type{RayTraversalType::Iterative};
+
+    GridBase(GridBase&&) = delete;
+    GridBase& operator=(GridBase&&) = delete;
+    GridBase(const GridBase&) = delete;
+    GridBase& operator=(const GridBase&) = delete;
+    ~GridBase() {
+        glDeleteBuffers(1, &m_data_ssbo);
+        m_data_ssbo = 0;
+    }
+
+    GridBase(const glm::uvec3& _size, MathHelpers::OrderingType _ordering, const glm::vec3& _dims, const CellData& _base = CellData{}) :
+        m_size(_size), m_ordering(_ordering), m_cell_number(_size.x * _size.y * _size.z), m_dims(_dims), m_pos(-0.5f * (glm::vec3(m_size) * m_dims)), m_data(m_cell_number, _base) {
+        glGenBuffers(1, &m_data_ssbo);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_data_ssbo);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_data.size() * sizeof(CellData), m_data.data(), GL_DYNAMIC_DRAW);
+    }
+    GridBase(const glm::uvec3& _size, MathHelpers::OrderingType _ordering, const CellData& _base = CellData{}) :
+        m_size(_size), m_ordering(_ordering), m_cell_number(_size.x * _size.y * _size.z), m_dims(1.f / m_size.x, 1.f / m_size.y, 1.f / m_size.z), m_pos(-0.5f * (glm::vec3(m_size) * m_dims)),
+        m_data(m_cell_number, _base) {
+        glGenBuffers(1, &m_data_ssbo);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_data_ssbo);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_data.size() * sizeof(CellData), m_data.data(), GL_DYNAMIC_DRAW);
+    }
+
+    inline size_t posToIndex(const glm::uvec3& _cell_pos) const {
+        switch (m_ordering) {
+        case MathHelpers::OrderingType::LexicoGraphic:
+            return MathHelpers::vecLexicoGraphic<uint, 3>::posToIndex(m_size, _cell_pos);
+        case MathHelpers::OrderingType::Zorder:
+            return MathHelpers::vecZorder<uint, 3>::posToIndex(m_size, _cell_pos);
+        default:
+            return 0;
+        }
+    }
+    inline const glm::uvec3& getSize() const { return m_size; }
+    inline size_t getCellNumber() const { return m_cell_number; }
+    inline MathHelpers::OrderingType getOrdering() const { return m_ordering; }
+    inline const glm::vec3& getDims() const { return m_dims; }
+    inline const glm::vec3& getPos() const { return m_pos; }
+
+    inline const CellData& getCell(size_t i) const { return m_data[i]; }
+    inline const CellData& getCell(const glm::uvec3& _cell_pos) const { return m_data[posToIndex(_cell_pos)]; }
+    inline CellData& getCell(size_t i) { return m_data[i]; }
+    inline CellData& getCell(const glm::uvec3& _cell_pos) { return m_data[posToIndex(_cell_pos)]; }
+
+    inline glm::uvec3 posToCellPos(const glm::vec3& _pos) const {
+        return glm::uvec3(std::floor((_pos.x - m_pos.x) / m_dims.x), std::floor((_pos.y - m_pos.y) / m_dims.y), std::floor((_pos.z - m_pos.z) / m_dims.z));
+    }
+    inline void forEachCell(const std::function<void(size_t, CellData&)>& _f) {
+        for (size_t i = 0; i < m_cell_number; i++)
+            _f(i, getCell(i));
+    }
+    inline void forEachCell(const std::function<void(size_t, const glm::uvec3&, CellData&)>& _f) {
+        glm::uvec3 pos;
+        for (pos.z = 0; pos.z < m_size.z; pos.z++) {
+            for (pos.y = 0; pos.y < m_size.y; pos.y++) {
+                for (pos.x = 0; pos.x < m_size.x; pos.x++) {
+                    size_t i = posToIndex(pos);
+                    _f(i, pos, getCell(i));
+                }
+            }
+        }
+    }
+    inline void forEachCell(const std::function<void(size_t, const CellData&)>& _f) const {
+        for (size_t i = 0; i < m_cell_number; i++)
+            _f(i, getCell(i));
+    }
+    inline void forEachCell(const std::function<void(size_t, const glm::uvec3&, const CellData&)>& _f) const {
+        glm::uvec3 pos;
+        for (pos.z = 0; pos.z < m_size.z; pos.z++) {
+            for (pos.y = 0; pos.y < m_size.y; pos.y++) {
+                for (pos.x = 0; pos.x < m_size.x; pos.x++) {
+                    size_t i = posToIndex(pos);
+                    _f(i, pos, getCell(i));
+                }
+            }
+        }
+    }
+
+    // RAY TRACING
+    // https://www.researchgate.net/publication/2611491_A_Fast_Voxel_Traversal_Algorithm_for_Ray_Tracing
+private:
+    template<RayData<CellData> T>
+    void iterativeRayTrace(const std::vector<GeometryHelpers::Ray<float>>& _rays, std::vector<T>& _datas) const {
+        for (size_t i = 0; i < _rays.size(); i++) {
+            RayTraversalInfo _infos;
+            if (!initRayTrace(_rays[i], _infos))
+                continue;
+
+            _datas[i].rayStep(_infos.start_cell_pos, getCell(_infos.start_cell_pos));
+
+            while (_infos.start_cell_pos != _infos.end_cell_pos) {
+                if (!stepRayTrace(_infos))
+                    break;
+
+                const CellData& cell = getCell(_infos.start_cell_pos);
+                _datas[i].rayStep(_infos.start_cell_pos, cell);
+                if (_datas[i].stopCondition(_infos.start_cell_pos, cell))
+                    break;
+            }
+        }
+    }
+    template<RayData<CellData> T>
+    void parallelRayTrace(const std::vector<GeometryHelpers::Ray<float>>& _rays, std::vector<T>& _datas) const {
+        const size_t n = _rays.size();
+        std::vector<RayTraversalInfo> rays_infos(n);
+        std::set<size_t> remaining_rays;
+        for (size_t i = 0; i < n; i++) {
+            if (initRayTrace(_rays[i], rays_infos[i])) {
+                _datas[i].rayStep(rays_infos[i].start_cell_pos, getCell(rays_infos[i].start_cell_pos));
+                remaining_rays.insert(i);
+            }
+        }
+
+        std::vector<size_t> rays_to_remove;
+        while (!remaining_rays.empty()) {
+            rays_to_remove.clear();
+            rays_to_remove.reserve(remaining_rays.size());
+
+            for (size_t i : remaining_rays) {
+                if (rays_infos[i].start_cell_pos == rays_infos[i].end_cell_pos || !stepRayTrace(rays_infos[i])) {
+                    rays_to_remove.push_back(i);
+                    continue;
+                }
+
+                const CellData& cell = getCell(rays_infos[i].start_cell_pos);
+                _datas[i].rayStep(rays_infos[i].start_cell_pos, cell);
+                if (_datas[i].stopCondition(rays_infos[i].start_cell_pos, cell)) {
+                    rays_to_remove.push_back(i);
+                    continue;
+                }
+            }
+
+            for (size_t i : rays_to_remove)
+                remaining_rays.erase(i);
+        }
+    }
+    template<RayData<CellData> T>
+    void multithreadedParallelRayTrace(const std::vector<GeometryHelpers::Ray<float>>& _rays, std::vector<T>& _datas) const {
+        const size_t n = _rays.size();
+        std::vector<RayTraversalInfo> rays_infos(n);
+        std::vector<std::atomic<bool>> ray_active(n); // Pas de set parce que sinon ça fait un gros objet complexe a plusieurs threads et c'est pas cool (ça reste pas ouf)
+
+#pragma omp parallel for
+        for (size_t i = 0; i < n; i++)
+            if ((ray_active[i] = initRayTrace(_rays[i], rays_infos[i])))
+                _datas[i].rayStep(rays_infos[i].start_cell_pos, getCell(rays_infos[i].start_cell_pos));
+
+        bool any_active = true;
+        while (any_active) {
+            any_active = false;
+
+            // https://github-pages.ucl.ac.uk/research-computing-with-cpp/08openmp/02_intro_openmp.html : The reduction clause
+#pragma omp parallel for reduction(|| : any_active)
+            for (size_t i = 0; i < n; i++) {
+                if (!ray_active[i])
+                    continue;
+
+                if (rays_infos[i].start_cell_pos == rays_infos[i].end_cell_pos || !stepRayTrace(rays_infos[i])) {
+                    ray_active[i] = false;
+                    continue;
+                }
+
+                const CellData& cell = getCell(rays_infos[i].start_cell_pos);
+                _datas[i].rayStep(rays_infos[i].start_cell_pos, cell);
+                if (_datas[i].stopCondition(rays_infos[i].start_cell_pos, cell)) {
+                    ray_active[i] = false;
+                } else {
+                    any_active = true;
+                }
+            }
+        }
+    }
+    template<RayData<CellData> T>
+    void multithreadedIterativeRayTrace(const std::vector<GeometryHelpers::Ray<float>>& _rays, std::vector<T>& _datas) const {
+#pragma omp parallel for
+        for (size_t i = 0; i < _rays.size(); i++) {
+            RayTraversalInfo _infos;
+            if (!initRayTrace(_rays[i], _infos))
+                continue;
+
+            _datas[i].rayStep(_infos.start_cell_pos, getCell(_infos.start_cell_pos));
+
+            while (_infos.start_cell_pos != _infos.end_cell_pos) {
+                if (!stepRayTrace(_infos))
+                    break;
+
+                const CellData& cell = getCell(_infos.start_cell_pos);
+                _datas[i].rayStep(_infos.start_cell_pos, cell);
+                if (_datas[i].stopCondition(_infos.start_cell_pos, cell))
+                    break;
+            }
+        }
+    }
+    template<RayData<CellData> T>
+    void GPURayTrace(const RayMarchingCompute& ray_marching_shader, GLuint _rays_ssbo, uint _nb_rays, const RayScreenShader& ray_screen_shader) const {
+        GLuint rays_ssbo;
+
+        {
+            ScopedTimer timer(g_profile_frame.ray_marching_shader_preparation);
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, _rays_ssbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _rays_ssbo);
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_data_ssbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_data_ssbo);
+
+            glGenBuffers(1, &rays_ssbo);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, rays_ssbo);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, _nb_rays * sizeof(T), nullptr, GL_DYNAMIC_DRAW);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, rays_ssbo);
+
+            ray_marching_shader.use();
+            ray_marching_shader.setUvec("grid_size", m_size);
+            ray_marching_shader.setUint("grid_cell_number", m_cell_number);
+            ray_marching_shader.setVec("grid_dims", m_dims);
+            ray_marching_shader.setVec("grid_pos", m_pos);
+        }
+
+        {
+            ScopedTimer timer(g_profile_frame.ray_marching_shader_execution);
+            ray_marching_shader.execute(_nb_rays, 1, 1);
+        }
+
+        {
+            ScopedTimer timer(g_profile_frame.ray_rendering);
+
+            ray_screen_shader.use();
+            ray_screen_shader.setUvec("grid_size", m_size);
+            ray_screen_shader.setUint("grid_cell_number", m_cell_number);
+            ray_screen_shader.setVec("grid_dims", m_dims);
+            ray_screen_shader.setVec("grid_pos", m_pos);
+
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+
+        // delete buffers
+        glDeleteBuffers(1, &rays_ssbo);
+    }
+
+public:
+    inline void updateCellsShaderData() const {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_data_ssbo);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_data.size() * sizeof(CellData), m_data.data());
+    }
+    template<RayData<CellData> T>
+    inline std::vector<T> rayTrace(const std::vector<GeometryHelpers::Ray<float>>& _rays,
+                                   uint _nb_rays,
+                                   const RayMarchingCompute& ray_marching_shader,
+                                   GLuint _rays_ssbo,
+                                   const RayScreenShader& ray_screen_shader) const {
+        std::vector<T> rays_data(_nb_rays);
+        switch (m_traversal_type) {
+        case RayTraversalType::Iterative:
+            iterativeRayTrace(_rays, rays_data);
+            break;
+        case RayTraversalType::Parallel:
+            parallelRayTrace(_rays, rays_data);
+            break;
+        case RayTraversalType::MultithreadedParallel:
+            multithreadedParallelRayTrace(_rays, rays_data);
+            break;
+        case RayTraversalType::MultithreadedIterative:
+            multithreadedIterativeRayTrace(_rays, rays_data);
+            break;
+        case RayTraversalType::GPU:
+            GPURayTrace<T>(ray_marching_shader, _rays_ssbo, _nb_rays, ray_screen_shader);
+            break;
+        case RayTraversalType::__COUNT:
+            throw std::runtime_error("RayTraversalType::__COUNT should never be used");
+            break;
+        }
+        return rays_data;
+    }
+
+    void updateInterface(ImGuiWindowFlags_ _window_flags = ImGuiWindowFlags_None) {
+        if (!ImGui::Begin("Grid Interface", nullptr, _window_flags)) {
+            ImGui::End();
+            return;
+        }
+
+        ImGui::DragFloat3("Grid pos", glm::value_ptr(m_pos), 0.01f);
+        if (ImGui::DragFloat3("Cell dimensions", glm::value_ptr(m_dims), 0.01f, 1.e-4f, 1.f, "%.4f")) {
+            m_dims = glm::clamp(m_dims, 1.e-4f, 1.f);
+        }
+        int traversal_type_int = static_cast<int>(m_traversal_type);
+        if (ImGui::Combo("Ray traversal type", &traversal_type_int, TRAVERSAL_TYPES_STR)) {
+            m_traversal_type = static_cast<RayTraversalType>(std::clamp(traversal_type_int, 0, NB_TRAVERSAL_TYPES));
+        }
+
+        ImGui::End();
+    }
+};
+
+struct FluidCell {
+    glm::vec3 velocity;
+    float density;
+};
+class FluidGrid : public GridBase<FluidCell> {
+public:
+    FluidGrid(const glm::uvec3& _size, MathHelpers::OrderingType _ordering, const glm::vec3& _dims, const FluidCell& _base = FluidCell{}) : GridBase<FluidCell>(_size, _ordering, _dims, _base) {}
+    FluidGrid(const glm::uvec3& _size, MathHelpers::OrderingType _ordering, const FluidCell& _base = FluidCell{}) : GridBase<FluidCell>(_size, _ordering, _base) {}
+
+    struct VolumetricWaterRay {
+        static constexpr glm::vec3 WATER_COLOR{0.32f, 0.64f, 0.85f};
+
+        float total_density{0.f};
+        uint nb_cells{0};
+
+        inline void rayStep(const glm::uvec3& _pos, const FluidCell& _cell) {
+            total_density += _cell.density;
+            nb_cells++;
+        }
+        inline bool stopCondition(const glm::uvec3& _pos, const FluidCell& _cell) { return false; }
+    };
+    inline std::vector<VolumetricWaterRay> rayTrace(const std::vector<GeometryHelpers::Ray<float>>& _rays,
+                                                    uint _nb_rays,
+                                                    const RayMarchingCompute& ray_marching_shader,
+                                                    GLuint _rays_ssbo,
+                                                    const RayScreenShader& ray_screen_shader) {
+        return GridBase<FluidCell>::rayTrace<VolumetricWaterRay>(_rays, _nb_rays, ray_marching_shader, _rays_ssbo, ray_screen_shader);
+    }
+    inline glm::vec4 getColor(const VolumetricWaterRay& _ray_data) const { // TODO: plus bel affichage ?
+        return glm::clamp(glm::vec4(VolumetricWaterRay::WATER_COLOR, _ray_data.total_density / m_size.x), 0.f, 1.f);
+    }
+
+    inline void update(float _delta_time) { // TODO: c'est fluide ou quoi là
+        // forEachCell([](size_t i, FluidCell& cell) { cell.density *= rand() % 2 ? 1.f / 0.95f : 0.95f; });
+        // updateCellsShaderData();
+    }
+};

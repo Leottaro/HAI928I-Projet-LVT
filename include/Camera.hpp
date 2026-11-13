@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <numbers>
 
 #include <QKeyEvent>
 #include <QMatrix4x4>
@@ -20,9 +19,10 @@ constexpr QVector3D VEC_RIGHT{1.f, 0.f, 0.f};
 constexpr QVector3D VEC_UP{0.f, 1.f, 0.f};
 constexpr QVector3D VEC_FRONT{0.f, 0.f, 1.f};
 
-constexpr float M_PI_SAFE{std::numbers::pi - 1.e-3f};
-constexpr float M_PI_2_SAFE{0.5f * std::numbers::pi - 1.e-3f};
-constexpr float M_PI_4_SAFE{0.25f * std::numbers::pi - 1.e-3f};
+constexpr double PI = 3.14159265358979323846;
+constexpr float PI_SAFE{PI - 1.e-3f};
+constexpr float PI_2_SAFE{0.5f * PI - 1.e-3f};
+constexpr float PI_4_SAFE{0.25f * PI - 1.e-3f};
 
 // (pitch, yaw)
 inline constexpr QVector3D eulerToEuclidian(const QVector2D& _angles) {
@@ -32,25 +32,25 @@ inline constexpr QVector3D eulerToEuclidian(const QVector2D& _angles) {
     float z = cosPhi * cosf(_angles.y());
     return QVector3D(x, y, z);
 }
-inline constexpr QVector2D euclidianToEuler(const QVector3D& xyz) {
+inline QVector2D euclidianToEuler(const QVector3D& xyz) {
     float angles_x = asin(xyz.y() / xyz.length());
     float angles_y = atan2(xyz.x(), xyz.z());
     if (angles_y < 0.f)
-        angles_y += 2.f * std::numbers::pi;
+        angles_y += 2.f * PI;
     return QVector2D(angles_x, angles_y);
 }
 inline constexpr float clipAnglePI(float angle) {
-    while (angle < -std::numbers::pi)
-        angle += 2.f * std::numbers::pi;
-    while (angle > std::numbers::pi)
-        angle -= 2.f * std::numbers::pi;
+    while (angle < -PI)
+        angle += 2.f * PI;
+    while (angle > PI)
+        angle -= 2.f * PI;
     return angle;
 }
-inline constexpr void clampOrientation(QVector2D& orientation) {
-    orientation.setX(std::clamp(orientation.x(), -M_PI_2_SAFE, M_PI_2_SAFE));
+inline void clampOrientation(QVector2D& orientation) {
+    orientation.setX(std::clamp(orientation.x(), -PI_2_SAFE, PI_2_SAFE));
     orientation.setY(clipAnglePI(orientation.y()));
 }
-inline constexpr void getViewVectors(const QVector2D& orientation, QVector3D& front, QVector3D& right, QVector3D& real_up) {
+inline void getViewVectors(const QVector2D& orientation, QVector3D& front, QVector3D& right, QVector3D& real_up) {
     front = eulerToEuclidian(orientation).normalized();
     right = QVector3D::crossProduct(front, VEC_UP).normalized();
     real_up = QVector3D::crossProduct(right, front).normalized();
