@@ -251,16 +251,13 @@ uint cellPosToIndexZorder(uvec3 _pos) {
 }
 
 void main() {
-    // generate ray direction
-    vec2 sample_offset = n_samples <= 1 ? vec2(0.) : vec2(random(vec3(f_uv, 0.)), random(vec3(f_uv, 1.))) * inv_screen;
+    vec2 sample_offset = n_samples == 1 ? vec2(0.) : vec2(random(vec3(f_uv, 0.)), random(vec3(f_uv, 1.))) * inv_screen;
     vec2 xy = screenToCamSpace(f_uv + sample_offset);
     vec3 ray_direction = normalize(applyTransformation(vec3(xy, near_plane), 1., viewproj_inverse) - cam_pos);
 
     RayTraversalInfo infos;
-    if(!initRayTrace(cam_pos, ray_direction, infos)) {
-        out_color = vec4(0.);
-        return;
-    }
+    if(!initRayTrace(cam_pos, ray_direction, infos))
+        discard;
 
     uint cell_index = cellPosToIndexZorder(infos.current_cell_pos);
 

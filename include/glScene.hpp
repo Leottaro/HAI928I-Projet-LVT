@@ -2,10 +2,10 @@
 
 #include "Camera.hpp"
 
-#include <QtCore/QElapsedTimer>
-#include <QtGui/QOpenGLExtraFunctions>
-#include <QtOpenGL/QOpenGLShaderProgram>
-#include <QtOpenGLWidgets/QOpenGLWidget>
+#include <QElapsedTimer>
+#include <QOpenGLExtraFunctions>
+#include <QOpenGLShaderProgram>
+#include <QOpenGLWidget>
 
 class GLScene : public QOpenGLWidget,
                 protected QOpenGLExtraFunctions {
@@ -23,7 +23,8 @@ private:
 
     Camera m_camera;
 
-    GLuint m_grid_ssbo;
+    GLuint m_vao{0};
+    GLuint m_grid_ssbo{0};
     // TODO: RayTracingRenderer
 
 public:

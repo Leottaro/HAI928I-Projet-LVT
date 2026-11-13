@@ -1,15 +1,11 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <numbers>
-#include <qevent.h>
-#include <qeventpoint.h>
 
-#include <QtGui/QKeyEvent>
-#include <QtGui/QMatrix4x4>
-#include <QtGui/QMouseEvent>
-#include <QtGui/QMoveEvent>
-#include <QtGui/qvectornd.h>
+#include <QKeyEvent>
+#include <QMatrix4x4>
 
 enum class ControlType { Orbital, FreeCam, __COUNT };
 static constexpr uint8_t NB_CONTROL_TYPES = static_cast<uint8_t>(ControlType::__COUNT);
@@ -74,7 +70,7 @@ public:
     ControlType m_type = ControlType::Orbital;
 
     QVector3D m_cam_pos{0.f, 0.f, 0.f};
-    float m_fovy{M_PI_2f};
+    float m_fovy{90.f};
     float m_aspect_ratio{1.f};
     QVector2D m_near_far{1.e-1f, 1.e4f};
     float m_rotation_speed{0.5f};
@@ -108,7 +104,7 @@ private:
 
     inline void updateRenderingData() {
         m_projection.setToIdentity();
-        m_projection.perspective(qRadiansToDegrees(m_fovy), m_aspect_ratio, m_near_far[0], m_near_far[1]);
+        m_projection.perspective(m_fovy, m_aspect_ratio, m_near_far[0], m_near_far[1]);
         m_view.setToIdentity();
         m_view.lookAt(m_cam_pos, m_cam_pos + m_front, m_real_up);
     }
@@ -159,11 +155,7 @@ public:
     //     ImGui::Separator();
 
     //     // FOV Control
-    //     float fovy_degree = glm::degrees(m_fovy);
-    //     bool fovy_changed = ImGui::DragFloat("FOV", &fovy_degree, 0.1f, 1.f, 179.f, "%.3f°");
-    //     if (fovy_changed) {
-    //         m_fovy = glm::radians(fovy_degree);
-    //     }
+    //     ImGui::DragFloat("FOV", &m_fovy, 0.1f, 1.f, 179.f, "%.3f°");
     //     ImGui::DragFloat2("nearFar", glm::value_ptr(m_near_far), 1.e-4f, 0.f, 1.e8f);
     //     ImGui::DragFloat("rotationSpeed", &m_rotation_speed, 1.e-2f, 0.f, 1.e2f);
 

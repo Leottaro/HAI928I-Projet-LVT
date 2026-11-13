@@ -47,8 +47,10 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 # --------------------------------------   INSTALLED LIBRARIES   --------------------------------------
 # -----------------------------------------------------------------------------------------------------
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
-target_link_libraries(${PROJECT_NAME} Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+# find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
+# target_link_libraries(${PROJECT_NAME} Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets OpenGL)
+target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Gui Qt5::Widgets Qt5::OpenGL)
 
 # -----------------------------------------------------------------------------------------------------
 # ---------------------------------------   FETCHED LIBRARIES   ---------------------------------------

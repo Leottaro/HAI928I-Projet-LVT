@@ -1,13 +1,7 @@
 #include "glScene.hpp"
 
 #include <cstdlib>
-#include <qnamespace.h>
 #include <vector>
-
-#include <QtCore/QCoreApplication>
-#include <QtGui/QMouseEvent>
-#include <QtOpenGL/QOpenGLShaderProgram>
-#include <QtWidgets/QWidget>
 
 GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_program(nullptr), m_camera() {
     setParent(parent);
@@ -45,24 +39,23 @@ void GLScene::initializeGL() {
     glClearColor(0, 0, 0, 1);
 
     m_program.reset(new QOpenGLShaderProgram());
-    // Compile vertex shader
-    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Vertex, "./shaders/viewport.vert"))
-        close();
+    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Vertex, "./shaders/viewport.vert")) {
+        qCritical() << "vert:" << m_program->log();
+        return;
+    }
+    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, "./shaders/ray_traversal.frag")) {
+        qCritical() << "frag:" << m_program->log();
+        return;
+    }
+    if (!m_program->link()) {
+        qCritical() << "link:" << m_program->log();
+        return;
+    }
 
-    // Compile fragment shader
-    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, "./shaders/ray_traversal.frag"))
-        close();
-
-    // Link shader pipeline
-    if (!m_program->link())
-        close();
-
-    // Bind shader pipeline for use
-    if (!m_program->bind())
-        close();
+    glGenVertexArrays(1, &m_vao);
 
     // Grid
-    std::vector<float> truc(32 * 32 * 32);
+    std::vector<float> truc(16 * 16 * 16);
     for (uint i = 0; i < truc.size(); i++)
         truc[i] = static_cast<float>(rand()) / RAND_MAX;
     glGenBuffers(1, &m_grid_ssbo);
@@ -75,24 +68,37 @@ void GLScene::initializeGL() {
 }
 
 void GLScene::paintGL() {
+    if (!m_program || !m_program->isLinked())
+        return;
+
+    auto drain = [&](const char *where) {
+        while (GLenum e = glGetError())
+            qWarning("GL error 0x%x after %s", e, where);
+    };
+
     m_last_frame.restart();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
 
     m_program->bind();
 
-    glUniform3ui(m_program->uniformLocation("grid_size"), 32, 32, 32);
+    drain("start of paintGL");
+
+    glUniform3ui(m_program->uniformLocation("grid_size"), 16, 16, 16);
     m_program->setUniformValue("grid_pos", -0.5f, -0.5f, -0.5f);
-    m_program->setUniformValue("grid_cell_dims", 1. / 32.f, 1. / 32.f, 1. / 32.f);
+    m_program->setUniformValue("grid_cell_dims", 1. / 16.f, 1. / 16.f, 1. / 16.f);
 
     m_program->setUniformValue("near_plane", m_camera.m_near_far.x());
     m_program->setUniformValue("cam_pos", m_camera.m_cam_pos);
     m_program->setUniformValue("viewproj_inverse", (m_camera.getProjection() * m_camera.getView()).inverted());
-    m_program->setUniformValue("n_samples", GLuint(1));
+    glUniform1ui(m_program->uniformLocation("n_samples"), 4);
     m_program->setUniformValue("inv_screen", QVector2D{1.f / size().width(), 1.f / size().height()});
 
+    drain("uniforms");
+
+    glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    drain("drawing");
 
     m_program->release();
 }
@@ -150,7 +156,7 @@ void GLScene::mouseReleaseEvent(QMouseEvent *_event) {
     }
 }
 void GLScene::mouseMoveEvent(QMouseEvent *_event) {
-    QPointF pos = _event->position();
+    QPointF pos = _event->pos();
     if (m_has_last_mouse_pos && _event->buttons() & Qt::MouseButton::LeftButton) {
         QVector2D delta(pos - m_last_mouse_pos);
         m_camera.onMouseMove(delta, getElapsedSec());
