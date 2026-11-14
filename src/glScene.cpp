@@ -1,22 +1,18 @@
 #include "glScene.hpp"
 
-#include <cstdlib>
-#include <vector>
+#include "Grid.hpp"
 
-GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_program(nullptr), m_camera() {
-    setParent(parent);
+GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({32, 32, 32}) {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
     m_core = QSurfaceFormat::defaultFormat().profile() == QSurfaceFormat::CoreProfile;
 
-    m_camera.onAspectRatioChange(static_cast<float>(width()) / height());
-    m_last_frame.start();
-    // if (m_transparent) {
-    //     QSurfaceFormat fmt = format();
-    //     fmt.setAlphaBufferSize(8);
-    //     setFormat(fmt);
-    // }
+    m_move_timer.setInterval(16);
+    m_move_timer.setTimerType(Qt::PreciseTimer);
+    connect(&m_move_timer, &QTimer::timeout, this, &GLScene::tickFreeCam);
+
+    m_grid.forEachCell([](size_t, const glm::uvec3 &, float &_density) { _density = static_cast<float>(rand()) / RAND_MAX; });
 }
 
 GLScene::~GLScene() {
@@ -38,73 +34,63 @@ void GLScene::initializeGL() {
     initializeOpenGLFunctions();
     glClearColor(0, 0, 0, 1);
 
-    m_program.reset(new QOpenGLShaderProgram());
-    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Vertex, "./shaders/viewport.vert")) {
-        qCritical() << "vert:" << m_program->log();
-        return;
-    }
-    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, "./shaders/ray_traversal.frag")) {
-        qCritical() << "frag:" << m_program->log();
-        return;
-    }
-    if (!m_program->link()) {
-        qCritical() << "link:" << m_program->log();
-        return;
-    }
+    // A core profile refuses to draw without a VAO bound, even when the vertices come from gl_VertexID.
+    m_vao.create();
 
-    glGenVertexArrays(1, &m_vao);
+    m_program.reset(new QOpenGLShaderProgram());
+    // Compile vertex shader
+    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Vertex, "./shaders/viewport.vert"))
+        close();
+
+    // Compile fragment shader
+    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, "./shaders/ray_traversal.frag"))
+        close();
+
+    // Link shader pipeline
+    if (!m_program->link())
+        close();
+
+    // Bind shader pipeline for use
+    if (!m_program->bind())
+        close();
 
     // Grid
-    std::vector<float> truc(16 * 16 * 16);
-    for (uint i = 0; i < truc.size(); i++)
-        truc[i] = static_cast<float>(rand()) / RAND_MAX;
     glGenBuffers(1, &m_grid_ssbo);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, truc.size() * sizeof(float), truc.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), m_grid.data().data(), GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
-    // glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, truc.size() * sizeof(float), truc.data());
 
     m_program->release();
 }
 
 void GLScene::paintGL() {
-    if (!m_program || !m_program->isLinked())
-        return;
-
-    auto drain = [&](const char *where) {
-        while (GLenum e = glGetError())
-            qWarning("GL error 0x%x after %s", e, where);
-    };
-
-    m_last_frame.restart();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     m_program->bind();
+    QOpenGLVertexArrayObject::Binder vao(&m_vao);
 
-    drain("start of paintGL");
+    // Display
+    glUniform3ui(m_program->uniformLocation("grid_size"), m_grid.getSize()[0], m_grid.getSize()[1], m_grid.getSize()[2]);
+    m_program->setUniformValue("grid_pos", m_grid.getPos());
+    m_program->setUniformValue("grid_cell_dims", m_grid.getCellDims());
+    m_program->setUniformValue("n_samples", 4);
 
-    glUniform3ui(m_program->uniformLocation("grid_size"), 16, 16, 16);
-    m_program->setUniformValue("grid_pos", -0.5f, -0.5f, -0.5f);
-    m_program->setUniformValue("grid_cell_dims", 1. / 16.f, 1. / 16.f, 1. / 16.f);
-
+    // Camera
     m_program->setUniformValue("near_plane", m_camera.m_near_far.x());
-    m_program->setUniformValue("cam_pos", m_camera.m_cam_pos);
+    m_program->setUniformValue("cam_pos", m_camera.getCamPos());
     m_program->setUniformValue("viewproj_inverse", (m_camera.getProjection() * m_camera.getView()).inverted());
-    glUniform1ui(m_program->uniformLocation("n_samples"), 4);
-    m_program->setUniformValue("inv_screen", QVector2D{1.f / size().width(), 1.f / size().height()});
 
-    drain("uniforms");
+    // gl_FragCoord is in framebuffer pixels, which differ from widget pixels on HiDPI screens.
+    const QSizeF framebuffer = size() * devicePixelRatioF();
+    m_program->setUniformValue("inv_screen", QVector2D{static_cast<float>(1. / framebuffer.width()), static_cast<float>(1. / framebuffer.height())});
 
-    glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-
-    drain("drawing");
 
     m_program->release();
 }
 
 void GLScene::resizeGL(int w, int h) {
-    m_camera.onAspectRatioChange(static_cast<float>(w) / h);
+    m_camera.onAspectRatioChange(h > 0 ? static_cast<float>(w) / h : 1.f);
 }
 
 void GLScene::cleanupGL() {
@@ -112,28 +98,43 @@ void GLScene::cleanupGL() {
         return;
     makeCurrent();
     m_program.reset(nullptr);
+    glDeleteBuffers(1, &m_grid_ssbo);
+    m_grid_ssbo = 0;
+    m_vao.destroy();
     doneCurrent();
 }
 
 void GLScene::keyPressEvent(QKeyEvent *_event) {
     if (_event->isAutoRepeat())
         return;
-    switch (_event->key()) {
-    case Qt::Key::Key_F11:
-        if (isFullScreen()) {
-            showNormal();
-        } else {
-            showFullScreen();
-        }
-        update();
-        break;
-    case Qt::Key::Key_C:
-        m_camera.CycleType();
-        update();
-        break;
-    default:
-        break;
+    m_pressed_keys.insert(_event->key());
+    if (!m_move_timer.isActive()) {
+        m_move_clock.restart();
+        m_move_timer.start();
     }
+}
+
+void GLScene::keyReleaseEvent(QKeyEvent *_event) {
+    if (_event->isAutoRepeat())
+        return;
+    m_pressed_keys.remove(_event->key());
+    if (m_pressed_keys.isEmpty())
+        m_move_timer.stop();
+}
+
+void GLScene::focusOutEvent(QFocusEvent *_event) {
+    m_pressed_keys.clear();
+    m_move_timer.stop();
+    QOpenGLWidget::focusOutEvent(_event);
+}
+
+void GLScene::tickFreeCam() {
+    const float delta_time = static_cast<float>(m_move_clock.nsecsElapsed()) * 1e-9f;
+    m_move_clock.restart();
+    if (m_camera.m_type != ControlType::FreeCam)
+        return;
+    m_camera.onKeysHeld(m_pressed_keys, delta_time);
+    update();
 }
 
 void GLScene::wheelEvent(QWheelEvent *_event) {
@@ -143,23 +144,21 @@ void GLScene::wheelEvent(QWheelEvent *_event) {
 
 void GLScene::mousePressEvent(QMouseEvent *_event) {
     if (_event->button() == Qt::LeftButton) {
-        // grabMouse();
         setCursor(Qt::BlankCursor);
         m_has_last_mouse_pos = false;
     }
 }
 void GLScene::mouseReleaseEvent(QMouseEvent *_event) {
     if (_event->button() == Qt::LeftButton) {
-        // releaseMouse();
         unsetCursor();
         m_has_last_mouse_pos = false;
     }
 }
 void GLScene::mouseMoveEvent(QMouseEvent *_event) {
-    QPointF pos = _event->pos();
+    QPointF pos = _event->localPos();
     if (m_has_last_mouse_pos && _event->buttons() & Qt::MouseButton::LeftButton) {
         QVector2D delta(pos - m_last_mouse_pos);
-        m_camera.onMouseMove(delta, getElapsedSec());
+        m_camera.onMouseMove(delta);
         update();
     }
     m_last_mouse_pos = pos;

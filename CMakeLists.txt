@@ -58,14 +58,14 @@ target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Gui Qt5::Widgets Qt5::OpenG
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR ${LIBS_DIR})
 
-# FetchContent_Declare(
-#     glm
-#     GIT_REPOSITORY https://github.com/g-truc/glm.git
-#     GIT_TAG 1.0.3
-#     EXCLUDE_FROM_ALL
-# )
-# FetchContent_MakeAvailable(glm)
-# target_link_libraries(${PROJECT_NAME} glm::glm)
+FetchContent_Declare(
+    glm
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG 1.0.3
+    EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(glm)
+target_link_libraries(${PROJECT_NAME} glm::glm)
 
 # FetchContent_Declare(
 #     Eigen
