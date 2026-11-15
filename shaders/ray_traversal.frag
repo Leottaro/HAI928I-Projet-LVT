@@ -234,7 +234,7 @@ bool rayStopCondition(inout RayData _ray_data, uvec3 _pos, uint _cell_index) {
     return false;
 }
 vec4 rayColor(in RayData _ray_data) {
-    return vec4(WATER_COLOR, _ray_data.max_density);
+    return vec4(WATER_COLOR * _ray_data.max_density, 1.f);
 }
 uint cellPosToIndexZorder(uvec3 _pos) {
     uvec3 buff = _pos;

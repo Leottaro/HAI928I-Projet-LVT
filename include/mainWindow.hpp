@@ -12,4 +12,8 @@ private:
 
 public:
     MainWindow();
+
+private:
+    void buildRenderMenu();
+    void buildCameraMenu();
 };

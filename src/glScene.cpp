@@ -73,7 +73,7 @@ void GLScene::paintGL() {
     glUniform3ui(m_program->uniformLocation("grid_size"), m_grid.getSize()[0], m_grid.getSize()[1], m_grid.getSize()[2]);
     m_program->setUniformValue("grid_pos", m_grid.getPos());
     m_program->setUniformValue("grid_cell_dims", m_grid.getCellDims());
-    m_program->setUniformValue("n_samples", 4);
+    m_program->setUniformValue("n_samples", m_samples);
 
     // Camera
     m_program->setUniformValue("near_plane", m_camera.m_near_far.x());
@@ -90,7 +90,7 @@ void GLScene::paintGL() {
 }
 
 void GLScene::resizeGL(int w, int h) {
-    m_camera.onAspectRatioChange(h > 0 ? static_cast<float>(w) / h : 1.f);
+    m_camera.setAspectRatio(h > 0 ? static_cast<float>(w) / h : 1.f);
 }
 
 void GLScene::cleanupGL() {
@@ -131,14 +131,16 @@ void GLScene::focusOutEvent(QFocusEvent *_event) {
 void GLScene::tickFreeCam() {
     const float delta_time = static_cast<float>(m_move_clock.nsecsElapsed()) * 1e-9f;
     m_move_clock.restart();
-    if (m_camera.m_type != ControlType::FreeCam)
+    if (m_camera.m_type != Camera::ControlType::FreeCam)
         return;
     m_camera.onKeysHeld(m_pressed_keys, delta_time);
+    emit camPosChanged(m_camera.m_cam_pos);
     update();
 }
 
 void GLScene::wheelEvent(QWheelEvent *_event) {
     m_camera.onWheel(_event);
+    emit camPosChanged(m_camera.m_cam_pos);
     update();
 }
 
@@ -159,6 +161,7 @@ void GLScene::mouseMoveEvent(QMouseEvent *_event) {
     if (m_has_last_mouse_pos && _event->buttons() & Qt::MouseButton::LeftButton) {
         QVector2D delta(pos - m_last_mouse_pos);
         m_camera.onMouseMove(delta);
+        emit camPosChanged(m_camera.m_cam_pos);
         update();
     }
     m_last_mouse_pos = pos;
@@ -166,4 +169,80 @@ void GLScene::mouseMoveEvent(QMouseEvent *_event) {
 }
 void GLScene::leaveEvent(QEvent *) {
     m_has_last_mouse_pos = false;
+}
+
+void GLScene::setSamples(int v) {
+    m_samples = v;
+    emit samplesChanged(m_samples);
+    update();
+}
+void GLScene::setCamType(Camera::ControlType _type) {
+    m_camera.setType(_type);
+    emit camTypeChanged(m_camera.m_type);
+    update();
+}
+void GLScene::cycleCamType() {
+    m_camera.CycleType();
+    emit camTypeChanged(m_camera.m_type);
+    update();
+}
+void GLScene::setCamPos(const QVector3D &_cam_pos) {
+    m_camera.m_cam_pos = _cam_pos;
+    m_camera.refresh();
+    emit camPosChanged(m_camera.m_cam_pos);
+    update();
+}
+void GLScene::setCamPosAxis(uint8_t axis, double v) {
+    m_camera.m_cam_pos[axis] = v;
+    m_camera.refresh();
+    emit camPosChanged(m_camera.m_cam_pos);
+    update();
+}
+void GLScene::setCamFovyDegrees(float _fovy) {
+    m_camera.m_fovy = glm::radians(_fovy);
+    m_camera.refresh();
+    emit camFovyChanged(m_camera.m_fovy);
+    update();
+}
+void GLScene::setCamNearFar(const QVector2D &_near_far) {
+    m_camera.m_near_far = _near_far;
+    m_camera.refresh();
+    emit camNearFarChanged(m_camera.m_near_far);
+    update();
+}
+void GLScene::setCamRotationSpeed(float _rotation_speed) {
+    m_camera.m_rotation_speed = _rotation_speed;
+    m_camera.refresh();
+    emit camRotationSpeedChanged(m_camera.m_rotation_speed);
+    update();
+}
+void GLScene::setCamFreeCamSpeed(float _free_cam_speed) {
+    m_camera.m_free_cam_speed = _free_cam_speed;
+    m_camera.refresh();
+    emit camFreeSpeedChanged(m_camera.m_free_cam_speed);
+    update();
+}
+void GLScene::setCamDistanceToCenter(float _distance_to_center) {
+    m_camera.m_distance_to_center = _distance_to_center;
+    m_camera.refresh();
+    emit camDistanceToCenterChanged(m_camera.m_distance_to_center);
+    update();
+}
+void GLScene::setCamZoomRate(float _zoom_rate) {
+    m_camera.m_zoom_rate = _zoom_rate;
+    m_camera.refresh();
+    emit camZoomRateChanged(m_camera.m_zoom_rate);
+    update();
+}
+void GLScene::setCamZoomRange(const QVector2D &_zoom_range) {
+    m_camera.m_zoom_range = _zoom_range;
+    m_camera.refresh();
+    emit camZoomRangeChanged(m_camera.m_zoom_range);
+    update();
+}
+void GLScene::setCamElasticity(float _elasticity) {
+    m_camera.m_elasticity = _elasticity;
+    m_camera.refresh();
+    emit camElasticityChanged(m_camera.m_elasticity);
+    update();
 }
