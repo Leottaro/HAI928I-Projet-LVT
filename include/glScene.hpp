@@ -18,12 +18,13 @@ private:
     bool m_core{false};
     QMetaObject::Connection m_cleanup_connection;
 
+    QTimer m_update_timer;
+    QElapsedTimer m_update_clock;
+
     QPointF m_last_mouse_pos;
     bool m_has_last_mouse_pos{false};
     // Free-cam: keys currently held + a timer that moves the camera while any is down.
     QSet<int> m_pressed_keys;
-    QTimer m_move_timer;
-    QElapsedTimer m_move_clock;
 
     std::unique_ptr<QOpenGLShaderProgram> m_program;
     QOpenGLVertexArrayObject m_vao;
@@ -60,9 +61,10 @@ protected:
 private:
     void cleanupGL();
     void uploadGrid();
-    void tickFreeCam();
 
 public slots:
+    void updateObjects();
+
     void setSamples(int _samples);
 
     void setCamType(Camera::ControlType _type);

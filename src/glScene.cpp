@@ -8,9 +8,14 @@ GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({64, 64, 64}) 
 
     m_core = QSurfaceFormat::defaultFormat().profile() == QSurfaceFormat::CoreProfile;
 
-    m_move_timer.setInterval(16);
-    m_move_timer.setTimerType(Qt::PreciseTimer);
-    connect(&m_move_timer, &QTimer::timeout, this, &GLScene::tickFreeCam);
+    m_update_timer.setInterval(100);
+    m_update_timer.setTimerType(Qt::PreciseTimer);
+    m_update_timer.setSingleShot(false);
+    connect(&m_update_timer, &QTimer::timeout, this, &GLScene::updateObjects);
+    // connect(&m_update_timer, &QTimer::timeout, this, []() { std::cout << "salut" << std::endl; });
+
+    m_update_timer.start();
+    m_update_clock.restart();
 
     m_grid.forEachCell([](size_t, const glm::uvec3 &, float &_density) { _density = static_cast<float>(rand()) / RAND_MAX; });
 }
@@ -57,10 +62,26 @@ void GLScene::initializeGL() {
     // Grid
     glGenBuffers(1, &m_grid_ssbo);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), m_grid.data().data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
 
     m_program->release();
+}
+
+void GLScene::updateObjects() {
+    const float delta_time = static_cast<float>(m_update_clock.nsecsElapsed()) * 1e-9f;
+
+    if (m_camera.m_type != Camera::ControlType::FreeCam) {
+        m_camera.onKeysHeld(m_pressed_keys, delta_time);
+        emit camPosChanged(m_camera.m_cam_pos);
+    }
+
+    m_grid.update(delta_time);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_grid.data().size() * sizeof(float), m_grid.data().data());
+
+    update();
+    m_update_clock.restart();
 }
 
 void GLScene::paintGL() {
@@ -108,34 +129,17 @@ void GLScene::keyPressEvent(QKeyEvent *_event) {
     if (_event->isAutoRepeat())
         return;
     m_pressed_keys.insert(_event->key());
-    if (!m_move_timer.isActive()) {
-        m_move_clock.restart();
-        m_move_timer.start();
-    }
 }
 
 void GLScene::keyReleaseEvent(QKeyEvent *_event) {
     if (_event->isAutoRepeat())
         return;
     m_pressed_keys.remove(_event->key());
-    if (m_pressed_keys.isEmpty())
-        m_move_timer.stop();
 }
 
 void GLScene::focusOutEvent(QFocusEvent *_event) {
     m_pressed_keys.clear();
-    m_move_timer.stop();
     QOpenGLWidget::focusOutEvent(_event);
-}
-
-void GLScene::tickFreeCam() {
-    const float delta_time = static_cast<float>(m_move_clock.nsecsElapsed()) * 1e-9f;
-    m_move_clock.restart();
-    if (m_camera.m_type != Camera::ControlType::FreeCam)
-        return;
-    m_camera.onKeysHeld(m_pressed_keys, delta_time);
-    emit camPosChanged(m_camera.m_cam_pos);
-    update();
 }
 
 void GLScene::wheelEvent(QWheelEvent *_event) {
