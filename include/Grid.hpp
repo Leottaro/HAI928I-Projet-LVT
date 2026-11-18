@@ -98,7 +98,7 @@ public:
 
     inline const GridBase<QVector3D>& velocities() const { return m_velocities_grid; }
 
-    inline void update(float _delta_time) {
-        forEachCell([this](size_t i, const glm::uvec3& pos, float& density) { density *= (rand() % 2 == 0) ? 1.f / 0.95f : 0.95f; });
+    inline void update(float) {
+        forEachCell([&](size_t, const glm::uvec3&, float& density) { density *= (rand() % 2 == 0) ? 1.f / 0.95f : 0.95f; });
     }
 };

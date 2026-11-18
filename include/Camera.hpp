@@ -4,15 +4,10 @@
 #include <array>
 #include <cmath>
 
-#include <QKeyEvent>
 #include <QMatrix4x4>
-#include <QMouseEvent>
-#include <QMoveEvent>
-#include <QSet>
 #include <QVector2D>
 #include <QVector3D>
 #include <QWheelEvent>
-#include <QtMath>
 
 inline const QVector3D VEC_ZERO{0.f, 0.f, 0.f};
 inline const QVector3D VEC_RIGHT{1.f, 0.f, 0.f};

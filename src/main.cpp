@@ -1,6 +1,8 @@
 #include "mainWindow.hpp"
 
 #include <QApplication>
+#include <QCoreApplication>
+#include <QSurfaceFormat>
 
 int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName("Projet 3D");

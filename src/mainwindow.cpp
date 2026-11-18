@@ -8,13 +8,13 @@
 
 #include <QAction>
 #include <QActionGroup>
-#include <QBoxLayout>
+#include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QMenu>
 #include <QMenuBar>
-#include <QPushButton>
 #include <QSpinBox>
-#include <QVector3D>
+#include <QWidget>
 #include <QWidgetAction>
 
 MainWindow::MainWindow() {
@@ -31,9 +31,9 @@ MainWindow::MainWindow() {
 
 void MainWindow::buildRenderMenu() {
     QMenu* render_menu = menuBar()->addMenu(tr("&Rendering"));
-    QFormLayout* form_layout = new QFormLayout(this);
+    QFormLayout* form_layout = new QFormLayout(render_menu);
 
-    auto* samples = new QSpinBox(this);
+    auto* samples = new QSpinBox(render_menu);
     samples->setRange(1, 16);
     samples->setKeyboardTracking(false);
     connect(samples, qOverload<int>(&QSpinBox::valueChanged), m_scene, &GLScene::setSamples);

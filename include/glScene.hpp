@@ -4,11 +4,19 @@
 #include "Grid.hpp"
 
 #include <QElapsedTimer>
+#include <QEvent>
+#include <QKeyEvent>
+#include <QMetaObject>
+#include <QMouseEvent>
 #include <QOpenGLExtraFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
 #include <QTimer>
+#include <QVector2D>
+#include <QVector3D>
+#include <QWheelEvent>
+#include <QWidget>
 
 class GLScene : public QOpenGLWidget,
                 protected QOpenGLExtraFunctions {
@@ -34,6 +42,7 @@ private:
 
     Camera m_camera;
     FluidGrid m_grid;
+    bool m_grid_updated{false};
 
 public:
     explicit GLScene(QWidget* parent = nullptr);

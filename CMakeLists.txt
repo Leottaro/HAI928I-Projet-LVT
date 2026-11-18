@@ -47,10 +47,17 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 # --------------------------------------   INSTALLED LIBRARIES   --------------------------------------
 # -----------------------------------------------------------------------------------------------------
 
-# find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
-# target_link_libraries(${PROJECT_NAME} Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
-find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets OpenGL)
-target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Gui Qt5::Widgets Qt5::OpenGL)
+
+find_package(Qt6 COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
+if("${Qt6_FOUND}")
+    message(STATUS "Qt6 Found !")
+    target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+else()
+    message(WARNING "Qt6 Not found... Trying Qt5...")
+    find_package(Qt5 COMPONENTS Core Gui Widgets OpenGL)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::OpenGL)
+endif()
+
 
 # -----------------------------------------------------------------------------------------------------
 # ---------------------------------------   FETCHED LIBRARIES   ---------------------------------------
@@ -65,7 +72,7 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(glm)
-target_link_libraries(${PROJECT_NAME} glm::glm)
+target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
 
 # FetchContent_Declare(
 #     Eigen
@@ -74,4 +81,4 @@ target_link_libraries(${PROJECT_NAME} glm::glm)
 #     EXCLUDE_FROM_ALL
 # )
 # FetchContent_MakeAvailable(Eigen)
-# target_link_libraries(${PROJECT_NAME} Eigen3::Eigen)
+# target_link_libraries(${PROJECT_NAME} PRIVATE Eigen3::Eigen)
