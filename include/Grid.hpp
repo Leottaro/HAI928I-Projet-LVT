@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <glm/glm.hpp>
+#include <qvector3d.h>
 #include <vector>
 
 #include <QVector3D>
@@ -96,10 +98,7 @@ public:
 
     inline const GridBase<QVector3D>& velocities() const { return m_velocities_grid; }
 
-    // inline void update(float _delta_time) { // TODO: c'est fluide ou quoi là
-    //     m_densities_grid.forEachCell([this](size_t i, float& density) {
-    //         // QVector3D velocity = m_velocities_grid.getCell(i);
-    //         density *= rand() % 2 ? 1.f / 0.95f : 0.95f;
-    //     });
-    // }
+    inline void update(float _delta_time) { // TODO: c'est fluide ou quoi là
+        forEachCell([this](size_t i, const glm::uvec3& pos, float& density) { density *= rand() % 2 ? 1.f / 0.95f : 0.95f; });
+    }
 };

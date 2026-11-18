@@ -117,8 +117,23 @@ void MainWindow::buildCameraMenu() {
     render_menu->addSection(tr("&Rotation Speed"));
     // TODO:
 
-    render_menu->addSection(tr("&Moving Speed"));
-    // TODO:
+    render_menu->addSection(tr("&Fov"));
+    QWidget* mv_speed_widget = new QWidget(render_menu);
+    QFormLayout* mv_speed_layout = new QFormLayout(mv_speed_widget);
+    QDoubleSpinBox* mv_speed = new QDoubleSpinBox(render_menu);
+    mv_speed->setDecimals(2);
+    mv_speed->setSingleStep(1.e-2);
+    mv_speed->setValue(m_scene->camera().m_free_cam_speed);
+    connect(mv_speed, QOverload<double>::of(&QDoubleSpinBox::valueChanged), m_scene, &GLScene::setCamFreeCamSpeed);
+    connect(m_scene, &GLScene::camFreeSpeedChanged, this, [mv_speed](float _speed) {
+        mv_speed->blockSignals(true);
+        mv_speed->setValue(_speed);
+        mv_speed->blockSignals(false);
+    });
+    mv_speed_layout->addRow(tr("&moving speed:"), mv_speed);
+    auto* mv_speed_action = new QWidgetAction(render_menu);
+    mv_speed_action->setDefaultWidget(mv_speed_widget);
+    render_menu->addAction(mv_speed_action);
 
     render_menu->addSection(tr("&Distance To Center"));
     // TODO:

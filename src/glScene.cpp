@@ -2,7 +2,7 @@
 
 #include "Grid.hpp"
 
-GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({32, 32, 32}) {
+GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({64, 64, 64}) {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
