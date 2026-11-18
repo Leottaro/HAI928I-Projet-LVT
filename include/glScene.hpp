@@ -3,6 +3,8 @@
 #include "Camera.hpp"
 #include "Grid.hpp"
 
+#include <memory>
+
 #include <QElapsedTimer>
 #include <QOpenGLExtraFunctions>
 #include <QOpenGLShaderProgram>

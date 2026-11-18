@@ -35,6 +35,11 @@ public:
     inline const std::vector<CellData>& data() const { return m_data; }
     inline std::vector<CellData>& data() { return m_data; }
 
+    inline CellData getCellOrZero(const glm::ivec3 & p_cell_pos) const{
+        uint index = cellPosToIndexZorder(p_cell_pos);
+        return (index > m_size.x * m_size.y * m_size.z) ? 0. : m_data[index];
+    }
+
     inline glm::uvec3 posToCellPos(const QVector3D& _pos) const {
         QVector3D rel = ((_pos - m_pos) / m_cell_dims);
         glm::uvec3 res{0, 0, 0};
@@ -42,6 +47,7 @@ public:
             res[i] = std::max(res[i], uint(rel[i]));
         return res;
     }
+
     inline uint cellPosToIndexZorder(glm::uvec3 _cell_pos) const {
         for (uint dim = 0; dim < 3; dim++) {
             _cell_pos[dim] = (_cell_pos[dim] | (_cell_pos[dim] << 16)) & uint(0xFF0000FF);
@@ -87,18 +93,97 @@ public:
             }
         }
     }
+
+    CellData sample(const glm::vec3 & p_position);
 };
 
-class FluidGrid : public GridBase<float> {
-    GridBase<QVector3D> m_velocities_grid;
+// Linear interpolation from p_from to p_to
+template <typename T>
+T lerp(const T & p_from, const T & p_to, const float p_weight) {
+    return p_from + p_weight * (p_to - p_from);
+}
+
+
+// Interpolate the grid at a real position, in between vertices
+template<> float GridBase<float>::sample(const glm::vec3 & p_grid_position) {
+    glm::ivec3 grid_cell_position = glm::floor(p_grid_position);  // TODO : réfléchir à peut être faire plaisir à léo et mettre un -m_pos
+    glm::vec3 pos_in_cell = p_grid_position - glm::vec3(grid_cell_position);
+
+    float lx_ly_lz = getCellOrZero(grid_cell_position);
+    float hx_ly_lz = getCellOrZero(grid_cell_position + glm::ivec3(1, 0, 0));
+    float lx_hy_lz = getCellOrZero(grid_cell_position + glm::ivec3(0, 1, 0));
+    float hx_hy_lz = getCellOrZero(grid_cell_position + glm::ivec3(1, 1, 0));
+    float lx_ly_hz = getCellOrZero(grid_cell_position + glm::ivec3(0, 0, 1));
+    float hx_ly_hz = getCellOrZero(grid_cell_position + glm::ivec3(1, 0, 1));
+    float lx_hy_hz = getCellOrZero(grid_cell_position + glm::ivec3(0, 1, 1));
+    float hx_hy_hz = getCellOrZero(grid_cell_position + glm::ivec3(1, 1, 1));
+
+    float lx_ly = lerp(lx_ly_lz, lx_ly_hz, pos_in_cell.z);
+    float hx_ly = lerp(hx_ly_lz, hx_ly_hz, pos_in_cell.z);
+    float lx_hy = lerp(lx_hy_lz, lx_hy_hz, pos_in_cell.z);
+    float hx_hy = lerp(hx_hy_lz, hx_hy_hz, pos_in_cell.z);
+
+    float lx = lerp(lx_ly, lx_hy, pos_in_cell.y);
+    float hx = lerp(hx_ly, hx_hy, pos_in_cell.y);
+
+    return lerp(lx, hx, pos_in_cell.x);
+}
+
+
+
+
+class FluidGrid {
+    glm::uvec3 m_size;
+
+    float voxel_size;
+    float density;
+
+    GridBase<float> m_density;
+
+    GridBase<float> m_velocity_x;
+    GridBase<float> m_velocity_y;
+    GridBase<float> m_velocity_z;
 
 public:
-    FluidGrid(const glm::uvec3& _size) : GridBase<float>(_size), m_velocities_grid(_size) {}
-    FluidGrid() : GridBase<float>(), m_velocities_grid() {}
+    //       ___             _               _
+    //      / __|___ _ _  __| |_ _ _ _  _ __| |_ ___ _ _ ___
+    //     | (__/ _ \ ' \(_-<  _| '_| || / _|  _/ _ \ '_(_-<
+    //      \___\___/_||_/__/\__|_|  \_,_\__|\__\___/_| /__/
+    //
 
-    inline const GridBase<QVector3D>& velocities() const { return m_velocities_grid; }
+    FluidGrid(const glm::uvec3& p_size):
+        m_size(p_size),
+        m_velocity_x(p_size + glm::uvec3(1, 0, 0)),
+        m_velocity_y(p_size + glm::uvec3(0, 1, 0)),
+        m_velocity_z(p_size + glm::uvec3(0, 0, 1))
+        {}
 
-    inline void update(float _delta_time) {
-        forEachCell([this](size_t i, const glm::uvec3& pos, float& density) { density *= (rand() % 2 == 0) ? 1.f / 0.95f : 0.95f; });
+    FluidGrid(){}
+
+    //       ___     _   _                __       ___      _   _
+    //      / __|___| |_| |_ ___ _ _ ___ / _|___  / __| ___| |_| |_ ___ _ _ ___
+    //     | (_ / -_)  _|  _/ -_) '_(_-< > _|_ _| \__ \/ -_)  _|  _/ -_) '_(_-<
+    //      \___\___|\__|\__\___|_| /__/ \_____|  |___/\___|\__|\__\___|_| /__/
+    //
+
+    inline const GridBase<QVector3D>& getVelocity() const {
+        return m_velocities_grid;
+    }
+
+    //      ___ _           _
+    //     | _ \ |_ _  _ __(_)__ ___
+    //     |  _/ ' \ || (_-< / _(_-<
+    //     |_| |_||_\_, /__/_\__/__/
+    //              |__/
+
+
+    void integrateVelocity(float p_delta_time) {
+
+    }
+
+
+    // Integrate physics by one time step
+    void update(float p_delta_time) {
+        // forEachCell([this](size_t i, const glm::uvec3& pos, float& density) { density *= rand() % 2 ? 1.f / 0.95f : 0.95f; });
     }
 };
