@@ -33,11 +33,28 @@ QSize GLScene::sizeHint() const {
     return QSize(1280, 720);
 }
 
-void GLScene::initializeGL() {
-    m_cleanup_connection = connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &GLScene::cleanupGL);
+void GLScene::updateObjects() {
+    const float delta_time = static_cast<float>(m_update_clock.nsecsElapsed()) * 1e-9f;
 
-    initializeOpenGLFunctions();
-    glClearColor(0, 0, 0, 1);
+    if (m_camera.m_type != Camera::ControlType::FreeCam) {
+        m_camera.onKeysHeld(m_pressed_keys, delta_time);
+        emit camPosChanged(m_camera.m_cam_pos);
+    }
+
+    m_grid.update(delta_time);
+    m_grid_updated = true;
+
+    update();
+    m_update_clock.restart();
+}
+
+void GLScene::initializeGL() {
+    QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
+
+    m_cleanup_connection = connect(QOpenGLContext::currentContext(), &QOpenGLContext::aboutToBeDestroyed, this, &GLScene::cleanupGL);
+
+    f->initializeOpenGLFunctions();
+    f->glClearColor(0, 0, 0, 1);
 
     // A core profile refuses to draw without a VAO bound, even when the vertices come from gl_VertexID.
     m_vao.create();
@@ -60,38 +77,30 @@ void GLScene::initializeGL() {
         close();
 
     // Grid
-    glGenBuffers(1, &m_grid_ssbo);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
+    f->glGenBuffers(1, &m_grid_ssbo);
+    f->glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
+    f->glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    f->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
 
     m_program->release();
 }
 
-void GLScene::updateObjects() {
-    const float delta_time = static_cast<float>(m_update_clock.nsecsElapsed()) * 1e-9f;
+void GLScene::paintGL() {
+    QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
 
-    if (m_camera.m_type != Camera::ControlType::FreeCam) {
-        m_camera.onKeysHeld(m_pressed_keys, delta_time);
-        emit camPosChanged(m_camera.m_cam_pos);
+    if (m_grid_updated) {
+        f->glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
+        f->glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_grid.data().size() * sizeof(float), m_grid.data().data());
+        m_grid_updated = false;
     }
 
-    m_grid.update(delta_time);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_grid.data().size() * sizeof(float), m_grid.data().data());
-
-    update();
-    m_update_clock.restart();
-}
-
-void GLScene::paintGL() {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     m_program->bind();
     QOpenGLVertexArrayObject::Binder vao(&m_vao);
 
     // Display
-    glUniform3ui(m_program->uniformLocation("grid_size"), m_grid.getSize()[0], m_grid.getSize()[1], m_grid.getSize()[2]);
+    f->glUniform3ui(m_program->uniformLocation("grid_size"), m_grid.getSize()[0], m_grid.getSize()[1], m_grid.getSize()[2]);
     m_program->setUniformValue("grid_pos", m_grid.getPos());
     m_program->setUniformValue("grid_cell_dims", m_grid.getCellDims());
     m_program->setUniformValue("n_samples", m_samples);
@@ -105,7 +114,7 @@ void GLScene::paintGL() {
     const QSizeF framebuffer = size() * devicePixelRatioF();
     m_program->setUniformValue("inv_screen", QVector2D{static_cast<float>(1. / framebuffer.width()), static_cast<float>(1. / framebuffer.height())});
 
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    f->glDrawArrays(GL_TRIANGLES, 0, 6);
 
     m_program->release();
 }
@@ -118,8 +127,9 @@ void GLScene::cleanupGL() {
     if (m_program == nullptr)
         return;
     makeCurrent();
+    QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
     m_program.reset(nullptr);
-    glDeleteBuffers(1, &m_grid_ssbo);
+    f->glDeleteBuffers(1, &m_grid_ssbo);
     m_grid_ssbo = 0;
     m_vao.destroy();
     doneCurrent();
@@ -161,7 +171,11 @@ void GLScene::mouseReleaseEvent(QMouseEvent *_event) {
     }
 }
 void GLScene::mouseMoveEvent(QMouseEvent *_event) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QPointF pos = _event->position();
+#else
     QPointF pos = _event->localPos();
+#endif
     if (m_has_last_mouse_pos && _event->buttons() & Qt::MouseButton::LeftButton) {
         QVector2D delta(pos - m_last_mouse_pos);
         m_camera.onMouseMove(delta);

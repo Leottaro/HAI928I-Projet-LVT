@@ -3,37 +3,40 @@
 #include "Camera.hpp"
 #include "glScene.hpp"
 
+#include <array>
 #include <cstdint>
 #include <limits>
+#include <memory>
 
 #include <QAction>
 #include <QActionGroup>
-#include <QBoxLayout>
+#include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
+#include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
-#include <QPushButton>
 #include <QSpinBox>
-#include <QVector3D>
+#include <QWidget>
 #include <QWidgetAction>
 
-MainWindow::MainWindow() {
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("Water voxel wowow");
     m_scene = new GLScene(this);
     m_scene->setFocusPolicy(Qt::StrongFocus);
-    setCentralWidget(m_scene);
+    m_scene->setFocus();
 
     buildRenderMenu();
     buildCameraMenu();
 
-    m_scene->setFocus();
+    setCentralWidget(m_scene);
 }
 
 void MainWindow::buildRenderMenu() {
     QMenu* render_menu = menuBar()->addMenu(tr("&Rendering"));
-    QFormLayout* form_layout = new QFormLayout(this);
+    QFormLayout* form_layout = new QFormLayout(render_menu);
 
-    auto* samples = new QSpinBox(this);
+    auto* samples = new QSpinBox(render_menu);
     samples->setRange(1, 16);
     samples->setKeyboardTracking(false);
     connect(samples, qOverload<int>(&QSpinBox::valueChanged), m_scene, &GLScene::setSamples);

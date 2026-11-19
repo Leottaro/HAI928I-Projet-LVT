@@ -11,7 +11,7 @@ private:
     GLScene* m_scene;
 
 public:
-    MainWindow();
+    MainWindow(QWidget* parent = nullptr);
 
 private:
     void buildRenderMenu();
