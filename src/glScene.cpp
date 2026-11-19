@@ -2,17 +2,18 @@
 
 #include "Grid.hpp"
 
-GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({64, 64, 64}) {
+#include <qvectornd.h>
+
+GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent) {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
     m_core = QSurfaceFormat::defaultFormat().profile() == QSurfaceFormat::CoreProfile;
 
-    m_update_timer.setInterval(100);
+    m_update_timer.setInterval(0);
     m_update_timer.setTimerType(Qt::PreciseTimer);
     m_update_timer.setSingleShot(false);
     connect(&m_update_timer, &QTimer::timeout, this, &GLScene::updateObjects);
-    // connect(&m_update_timer, &QTimer::timeout, this, []() { std::cout << "salut" << std::endl; });
 
     m_update_timer.start();
     m_update_clock.restart();
@@ -35,8 +36,9 @@ QSize GLScene::sizeHint() const {
 
 void GLScene::updateObjects() {
     const float delta_time = static_cast<float>(m_update_clock.nsecsElapsed()) * 1e-9f;
+    m_update_clock.restart();
 
-    if (m_camera.m_type != Camera::ControlType::FreeCam) {
+    if (m_camera.m_type == Camera::ControlType::FreeCam) {
         m_camera.onKeysHeld(m_pressed_keys, delta_time);
         emit camPosChanged(m_camera.m_cam_pos);
     }
@@ -45,7 +47,6 @@ void GLScene::updateObjects() {
     m_grid_updated = true;
 
     update();
-    m_update_clock.restart();
 }
 
 void GLScene::initializeGL() {
@@ -104,6 +105,8 @@ void GLScene::paintGL() {
     m_program->setUniformValue("grid_pos", m_grid.getPos());
     m_program->setUniformValue("grid_cell_dims", m_grid.getCellDims());
     m_program->setUniformValue("n_samples", m_samples);
+    m_program->setUniformValue("scattering_coefs", m_scattering_coefs);
+    m_program->setUniformValue("sun_pos", m_sun_pos);
 
     // Camera
     m_program->setUniformValue("near_plane", m_camera.m_near_far.x());
@@ -192,6 +195,26 @@ void GLScene::leaveEvent(QEvent *) {
 void GLScene::setSamples(int v) {
     m_samples = v;
     emit samplesChanged(m_samples);
+    update();
+}
+void GLScene::setSunPos(const QVector3D &_sun_pos) {
+    m_sun_pos = _sun_pos;
+    emit sunPosChanged(_sun_pos);
+    update();
+}
+void GLScene::setSunPosAxis(uint8_t axis, double v) {
+    m_sun_pos[axis] = v;
+    emit camPosChanged(m_sun_pos);
+    update();
+}
+void GLScene::setScatteringCoefs(const QVector3D &_scattering_coefs) {
+    m_scattering_coefs = _scattering_coefs;
+    emit scatteringCoefsChanged(_scattering_coefs);
+    update();
+}
+void GLScene::setScatteringCoefsAxis(uint8_t axis, double v) {
+    m_scattering_coefs[axis] = v;
+    emit camPosChanged(m_scattering_coefs);
     update();
 }
 void GLScene::setCamType(Camera::ControlType _type) {

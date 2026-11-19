@@ -8,16 +8,18 @@ layout(binding = 0, std430) buffer z_order_grid_data_buff {
     float grid_cell_densities[];
 };
 
+uniform float near_plane;
+uniform vec3 cam_pos;
+uniform mat4 viewproj_inverse;
+uniform vec2 inv_screen;
+
 uniform uvec3 grid_size;
 uniform vec3 grid_pos;
 uniform vec3 grid_cell_dims;
 
-uniform float near_plane;
-uniform vec3 cam_pos;
-uniform mat4 viewproj_inverse;
-
 uniform uint n_samples;
-uniform vec2 inv_screen;
+uniform vec3 scattering_coefs;
+uniform vec3 sun_pos;
 
 in vec2 f_uv;
 out vec4 out_color;
@@ -87,10 +89,14 @@ vec3 applyTransformation(vec3 vec, float w, mat4 transfo) {
 // ===================================== RAY TRAVERSAL HELPERS ====================================
 // ================================================================================================
 
+// https://www.researchgate.net/publication/2611491_A_Fast_Voxel_Traversal_Algorithm_for_Ray_Tracing
 struct RayTraversalInfo {
     uvec3 current_cell_pos, end_cell_pos;
     vec3 tdelta, t;
     ivec3 step;
+
+    vec3 ray_origin, ray_dir;
+    float last_step_distance;
 };
 bool intersectRayAABB(vec3 aabb_min, vec3 aabb_max, inout vec3 origin, inout vec3 direction, out float tmin, out float tmax) {
     vec3 delta_min = aabb_min - origin;
@@ -169,10 +175,14 @@ uvec3 posToCellPos(vec3 _pos) {
     vec3 rel = floor((_pos - grid_pos) / grid_cell_dims);
     return uvec3(max(rel, vec3(0.0)));
 }
-bool initRayTrace(vec3 _ray_origin, vec3 _ray_direction, out RayTraversalInfo _infos) {
+bool initRayTraversal(vec3 _ray_origin, vec3 _ray_direction, out RayTraversalInfo _infos) {
     float t1, t2;
     if(!intersectRayAABB(grid_pos, grid_pos + vec3(grid_size) * grid_cell_dims, _ray_origin, _ray_direction, t1, t2) || t2 < 0.)
-      return false;
+        return false;
+
+    _infos.ray_origin = _ray_origin;
+    _infos.ray_dir = _ray_direction;
+    _infos.last_step_distance = 0.;
 
     vec3 start = t1 < 0. ? _ray_origin : _ray_origin + t1 * _ray_direction;
     vec3 end = _ray_origin + t2 * _ray_direction;
@@ -198,7 +208,7 @@ bool initRayTrace(vec3 _ray_origin, vec3 _ray_direction, out RayTraversalInfo _i
 
     return true;
 }
-bool stepRayTrace(inout RayTraversalInfo _infos) {
+bool stepRayTraversal(inout RayTraversalInfo _infos) {
     uint axis;
     if(_infos.t.x < _infos.t.y && _infos.t.x < _infos.t.z)
       axis = 0;
@@ -212,30 +222,21 @@ bool stepRayTrace(inout RayTraversalInfo _infos) {
         return false;
 
     _infos.current_cell_pos[axis] = uint(next);
+    vec3 old_pos = _infos.ray_origin + _infos.ray_dir * _infos.t;
     _infos.t[axis] += _infos.tdelta[axis];
+    vec3 new_pos = _infos.ray_origin + _infos.ray_dir * _infos.t;
+    _infos.last_step_distance = distance(old_pos, new_pos); // TODO: better way ?
     return true;
 }
 
 // ================================================================================================
-// ==================================== RAY TRAVERSAL FUNCTIONS ===================================
+// ==================================== RAY Traversal FUNCTIONS ===================================
 // ================================================================================================
 
-const vec3 WATER_COLOR = vec3(0.32, 0.64, 0.85);
 struct RayData {
-    float max_density;
+    float total_density;
+    vec3 total_light;
 };
-void rayInit(inout RayData _ray_data) {
-    _ray_data.max_density = 0.;
-}
-void rayStep(inout RayData _ray_data, uvec3 _pos, uint _cell_index) {
-    _ray_data.max_density = max(_ray_data.max_density, grid_cell_densities[_cell_index]);
-}
-bool rayStopCondition(inout RayData _ray_data, uvec3 _pos, uint _cell_index) {
-    return false;
-}
-vec4 rayColor(in RayData _ray_data) {
-    return vec4(WATER_COLOR * _ray_data.max_density, 1.f);
-}
 uint cellPosToIndexZorder(uvec3 _pos) {
     uvec3 buff = _pos;
     for(uint dim = 0; dim < 3; dim++) {
@@ -250,25 +251,51 @@ uint cellPosToIndexZorder(uvec3 _pos) {
     return res;
 }
 
+float rayDensityTraversal(vec3 _ray_origin, vec3 _ray_direction) {
+    float density = 0.;
+    RayTraversalInfo infos;
+    if(!initRayTraversal(_ray_origin, _ray_direction, infos))
+        return density;
+    do {
+        uint cell_index = cellPosToIndexZorder(infos.current_cell_pos);
+        density += grid_cell_densities[cell_index] * infos.last_step_distance;
+    } while (infos.current_cell_pos != infos.end_cell_pos && stepRayTraversal(infos));
+    return density;
+}
+
+bool rayTraversal(vec3 _ray_origin, vec3 _ray_direction, out RayTraversalInfo infos, out RayData ray_data) {
+    ray_data.total_density = 0.;
+    ray_data.total_light = vec3(0.);
+
+    if(!initRayTraversal(_ray_origin, _ray_direction, infos))
+        return false;
+
+    do {
+        uint cell_index = cellPosToIndexZorder(infos.current_cell_pos);
+
+        float density_along_step = grid_cell_densities[cell_index] * infos.last_step_distance;
+        ray_data.total_density += density_along_step;
+
+        vec3 cell_pos = grid_pos + vec3(infos.current_cell_pos) * grid_cell_dims;
+        float sun_total_density = rayDensityTraversal(cell_pos, normalize(sun_pos - cell_pos));
+        vec3 transmitted_sun_light = exp(-sun_total_density * scattering_coefs);
+
+        vec3 in_scattered_light = vec3(1.) * density_along_step * scattering_coefs;
+        vec3 view_ray_transmittance = exp(-ray_data.total_density * scattering_coefs);
+        ray_data.total_light += in_scattered_light * view_ray_transmittance;
+    } while (infos.current_cell_pos != infos.end_cell_pos && stepRayTraversal(infos));
+
+    return true;
+}
+
 void main() {
     vec2 sample_offset = n_samples == 1 ? vec2(0.) : vec2(random(vec3(f_uv, 0.)), random(vec3(f_uv, 1.))) * inv_screen;
     vec2 xy = screenToCamSpace(f_uv + sample_offset);
     vec3 ray_direction = normalize(applyTransformation(vec3(xy, near_plane), 1., viewproj_inverse) - cam_pos);
 
     RayTraversalInfo infos;
-    if(!initRayTrace(cam_pos, ray_direction, infos))
-        discard;
-
-    uint cell_index = cellPosToIndexZorder(infos.current_cell_pos);
-
     RayData ray_data;
-    rayInit(ray_data);
-    rayStep(ray_data, infos.current_cell_pos, cell_index);
-
-    while(infos.current_cell_pos != infos.end_cell_pos && stepRayTrace(infos)) {
-        cell_index = cellPosToIndexZorder(infos.current_cell_pos);
-        rayStep(ray_data, infos.current_cell_pos, cell_index);
-    }
-
-    out_color = rayColor(ray_data);
+    if (!rayTraversal(cam_pos, ray_direction, infos, ray_data))
+        discard;
+    out_color = vec4(ray_data.total_light, 1.f);
 }

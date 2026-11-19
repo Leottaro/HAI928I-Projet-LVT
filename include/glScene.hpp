@@ -3,6 +3,8 @@
 #include "Camera.hpp"
 #include "Grid.hpp"
 
+#include <qvectornd.h>
+
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QKeyEvent>
@@ -39,10 +41,14 @@ private:
     GLuint m_grid_ssbo{0};
 
     uint m_samples{1};
+    QVector3D m_sun_pos{0., 1., 0.};
+    QVector3D m_scattering_coefs{1., 1., 1.};
 
     Camera m_camera;
-    FluidGrid m_grid;
-    bool m_grid_updated{false};
+    FluidGrid m_grid{
+        {64, 64, 64}
+    };
+    bool m_grid_updated{true};
 
 public:
     explicit GLScene(QWidget* parent = nullptr);
@@ -50,7 +56,11 @@ public:
 
     QSize minimumSizeHint() const override;
     QSize sizeHint() const override;
-    const Camera& camera() const { return m_camera; }
+
+    const Camera& getCamera() const { return m_camera; }
+    int getSamples() { return m_samples; }
+    const QVector3D& getSunPos() const { return m_sun_pos; }
+    const QVector3D& getScatteringCoefs() const { return m_scattering_coefs; }
 
 protected:
     void initializeGL() override;
@@ -75,6 +85,10 @@ public slots:
     void updateObjects();
 
     void setSamples(int _samples);
+    void setSunPos(const QVector3D& _sun_pos);
+    void setSunPosAxis(uint8_t axis, double v);
+    void setScatteringCoefs(const QVector3D& _scattering_coefs);
+    void setScatteringCoefsAxis(uint8_t axis, double v);
 
     void setCamType(Camera::ControlType _type);
     void cycleCamType();
@@ -91,6 +105,8 @@ public slots:
 
 signals:
     void samplesChanged(int _samples);
+    void sunPosChanged(const QVector3D& _sun_pos);
+    void scatteringCoefsChanged(const QVector3D& _scattering_coefs);
 
     void camTypeChanged(Camera::ControlType _type);
     void camPosChanged(const QVector3D& _cam_pos);
