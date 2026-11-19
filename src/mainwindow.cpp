@@ -3,30 +3,33 @@
 #include "Camera.hpp"
 #include "glScene.hpp"
 
+#include <array>
 #include <cstdint>
 #include <limits>
+#include <memory>
 
 #include <QAction>
 #include <QActionGroup>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
 #include <QSpinBox>
 #include <QWidget>
 #include <QWidgetAction>
 
-MainWindow::MainWindow() {
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("Water voxel wowow");
     m_scene = new GLScene(this);
     m_scene->setFocusPolicy(Qt::StrongFocus);
-    setCentralWidget(m_scene);
+    m_scene->setFocus();
 
     buildRenderMenu();
     buildCameraMenu();
 
-    m_scene->setFocus();
+    setCentralWidget(m_scene);
 }
 
 void MainWindow::buildRenderMenu() {

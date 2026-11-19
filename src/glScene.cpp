@@ -49,7 +49,6 @@ void GLScene::updateObjects() {
 }
 
 void GLScene::initializeGL() {
-    makeCurrent();
     QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
 
     m_cleanup_connection = connect(QOpenGLContext::currentContext(), &QOpenGLContext::aboutToBeDestroyed, this, &GLScene::cleanupGL);
@@ -84,11 +83,9 @@ void GLScene::initializeGL() {
     f->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
 
     m_program->release();
-    doneCurrent();
 }
 
 void GLScene::paintGL() {
-    makeCurrent();
     QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
 
     if (m_grid_updated) {
@@ -120,7 +117,6 @@ void GLScene::paintGL() {
     f->glDrawArrays(GL_TRIANGLES, 0, 6);
 
     m_program->release();
-    doneCurrent();
 }
 
 void GLScene::resizeGL(int w, int h) {
@@ -176,7 +172,7 @@ void GLScene::mouseReleaseEvent(QMouseEvent *_event) {
 }
 void GLScene::mouseMoveEvent(QMouseEvent *_event) {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    QPointF pos = _event->pos();
+    QPointF pos = _event->position();
 #else
     QPointF pos = _event->localPos();
 #endif

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <qmath.h>
 
 #include <QMatrix4x4>
 #include <QVector2D>

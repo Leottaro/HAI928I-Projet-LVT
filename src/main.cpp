@@ -9,15 +9,16 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setOrganizationName("M2 IMAGINE");
     QCoreApplication::setApplicationVersion(QT_VERSION_STR);
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
-    QApplication app(argc, argv);
 
     QSurfaceFormat format;
+    format.setRenderableType(QSurfaceFormat::OpenGL);
     format.setDepthBufferSize(24);
     format.setStencilBufferSize(8);
-    format.setSamples(4);
     format.setVersion(4, 3);
     format.setProfile(QSurfaceFormat::CoreProfile);
     QSurfaceFormat::setDefaultFormat(format);
+
+    QApplication app(argc, argv);
 
     MainWindow main_window;
     main_window.resize(main_window.sizeHint());
