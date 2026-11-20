@@ -2,8 +2,6 @@
 
 #include "Grid.hpp"
 
-#include <qvectornd.h>
-
 GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent) {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
@@ -101,10 +99,7 @@ void GLScene::paintGL() {
     QOpenGLVertexArrayObject::Binder vao(&m_vao);
 
     // Display
-    f->glUniform3ui(m_program->uniformLocation("grid_size"), m_grid.getSize()[0], m_grid.getSize()[1], m_grid.getSize()[2]);
-    m_program->setUniformValue("grid_pos", m_grid.getPos());
-    m_program->setUniformValue("grid_cell_dims", m_grid.getCellDims());
-    m_program->setUniformValue("n_samples", m_samples);
+    f->glUniform1ui(m_program->uniformLocation("n_samples"), m_samples);
     m_program->setUniformValue("scattering_coefs", m_scattering_coefs);
     m_program->setUniformValue("sun_pos", m_sun_pos);
 
@@ -112,6 +107,11 @@ void GLScene::paintGL() {
     m_program->setUniformValue("near_plane", m_camera.m_near_far.x());
     m_program->setUniformValue("cam_pos", m_camera.getCamPos());
     m_program->setUniformValue("viewproj_inverse", (m_camera.getProjection() * m_camera.getView()).inverted());
+
+    // Grid
+    f->glUniform3ui(m_program->uniformLocation("grid_size"), m_grid.getSize()[0], m_grid.getSize()[1], m_grid.getSize()[2]);
+    m_program->setUniformValue("grid_pos", m_grid.getPos());
+    m_program->setUniformValue("grid_cell_dims", m_grid.getCellDims());
 
     // gl_FragCoord is in framebuffer pixels, which differ from widget pixels on HiDPI screens.
     const QSizeF framebuffer = size() * devicePixelRatioF();

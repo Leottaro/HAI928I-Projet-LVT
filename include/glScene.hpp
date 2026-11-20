@@ -40,9 +40,9 @@ private:
     QOpenGLVertexArrayObject m_vao;
     GLuint m_grid_ssbo{0};
 
-    uint m_samples{1};
+    uint m_samples{1u};
     QVector3D m_sun_pos{0., 1., 0.};
-    QVector3D m_scattering_coefs{1., 1., 1.};
+    QVector3D m_scattering_coefs{0.32, 0.64, 0.85};
 
     Camera m_camera;
     FluidGrid m_grid{

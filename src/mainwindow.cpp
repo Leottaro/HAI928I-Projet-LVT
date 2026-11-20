@@ -44,12 +44,11 @@ void MainWindow::buildRenderMenu() {
     samples->setKeyboardTracking(false);
     connect(samples, qOverload<int>(&QSpinBox::valueChanged), m_scene, &GLScene::setSamples);
     connect(m_scene, &GLScene::samplesChanged, samples, &QSpinBox::setValue);
-    samples_layout->addRow(tr("&moving speed:"), samples);
+    samples_layout->addRow(tr("&samples:"), samples);
     auto* samples_action = new QWidgetAction(render_menu);
     samples_action->setDefaultWidget(samples_widget);
     render_menu->addAction(samples_action);
 
-    // sun_pos
     render_menu->addSection(tr("&Sun Pos"));
 
     QWidget* sun_pos_widget = new QWidget(render_menu);

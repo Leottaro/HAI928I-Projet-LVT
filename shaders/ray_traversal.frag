@@ -289,13 +289,20 @@ bool rayTraversal(vec3 _ray_origin, vec3 _ray_direction, out RayTraversalInfo in
 }
 
 void main() {
-    vec2 sample_offset = n_samples == 1 ? vec2(0.) : vec2(random(vec3(f_uv, 0.)), random(vec3(f_uv, 1.))) * inv_screen;
-    vec2 xy = screenToCamSpace(f_uv + sample_offset);
-    vec3 ray_direction = normalize(applyTransformation(vec3(xy, near_plane), 1., viewproj_inverse) - cam_pos);
+    out_color = vec4(0., 0., 0., 1.);
+    for(uint sample_i = 0; sample_i < n_samples; sample_i++){
+        uint sample_seed = sample_i * 2u;
+        vec2 sample_offset = n_samples == 1u ? vec2(0.) : vec2(
+            random(vec3(f_uv, float(sample_seed))),
+            random(vec3(f_uv, float(sample_seed + 1u)))
+        ) * inv_screen;
+        vec2 xy = screenToCamSpace(f_uv + sample_offset);
+        vec3 ray_direction = normalize(applyTransformation(vec3(xy, near_plane), 1., viewproj_inverse) - cam_pos);
 
-    RayTraversalInfo infos;
-    RayData ray_data;
-    if (!rayTraversal(cam_pos, ray_direction, infos, ray_data))
-        discard;
-    out_color = vec4(ray_data.total_light, 1.f);
+        RayTraversalInfo infos;
+        RayData ray_data;
+        if (rayTraversal(cam_pos, ray_direction, infos, ray_data))
+            out_color.xyz += ray_data.total_light;
+    }
+    out_color.xyz /= float(n_samples);
 }
