@@ -1,5 +1,4 @@
 #version 430 core
-const float FLT_MAX = 3.402823466e+38;
 
 // ================================================================================================
 // ======================================== IN/OUT/UNIFORMS =======================================
@@ -84,148 +83,84 @@ vec3 applyTransformation(vec3 vec, float w, mat4 transfo) {
     vec4 temp = transfo * vec4(vec, w);
     return temp.w == 0 ? vec3(temp.x, temp.y, temp.z) : vec3(temp.x, temp.y, temp.z) / temp.w;
 }
+uvec3 posToCellPos(vec3 _pos) {
+    vec3 rel = floor((_pos - grid_pos) / grid_cell_dims);
+    return uvec3(max(rel, vec3(0.0)));
+}
 
 // ================================================================================================
 // ===================================== RAY TRAVERSAL HELPERS ====================================
 // ================================================================================================
 
+const float RAY_DIR_EPS = 1.e-8;
+
 // https://www.researchgate.net/publication/2611491_A_Fast_Voxel_Traversal_Algorithm_for_Ray_Tracing
-struct RayTraversalInfo {
+struct VoxelTraversalData {
     uvec3 current_cell_pos, end_cell_pos;
-    vec3 tdelta, t;
+    vec3 t_delta, t_next;
     ivec3 step;
 
-    vec3 ray_origin, ray_dir;
     float last_step_distance;
 };
-bool intersectRayAABB(vec3 aabb_min, vec3 aabb_max, inout vec3 origin, inout vec3 direction, out float tmin, out float tmax) {
-    vec3 delta_min = aabb_min - origin;
-    vec3 delta_max = aabb_max - origin;
+bool intersectRayAABB(vec3 _aabb_min, vec3 _aabb_max, vec3 _ray_origin, vec3 _ray_dir, out float tmin, out float tmax) {
+    vec3 inv_dir = 1. / _ray_dir;
+    vec3 t0 = (_aabb_min - _ray_origin) * inv_dir;
+    vec3 t1 = (_aabb_max - _ray_origin) * inv_dir;
 
-    float t0, t1, ttemp;
-    int f0, f1, ftemp;
+    vec3 t_small = min(t0, t1);
+    vec3 t_big = max(t0, t1);
 
-    // X slab: -X=0, +X=3
-    t0 = delta_min.x / direction.x;
-    t1 = delta_max.x / direction.x;
-    f0 = 0;
-    f1 = 3; // -X, +X
-    if(t0 > t1) {
-        ttemp = t0;
-        t0 = t1;
-        t1 = ttemp;
-
-        ftemp = f0;
-        f0 = f1;
-        f1 = ftemp;
-    }
-    tmin = t0;
-    tmax = t1;
-
-    // Y slab: -Y=1, +Y=4
-    float tmin_tmp = delta_min.y / direction.y;
-    float tmax_tmp = delta_max.y / direction.y;
-    int fmin_tmp = 1, fmax_tmp = 4; // -Y, +Y
-    if(tmin_tmp > tmax_tmp) {
-        ttemp = tmin_tmp;
-        tmin_tmp = tmax_tmp;
-        tmax_tmp = ttemp;
-
-        ftemp = fmin_tmp;
-        fmin_tmp = fmax_tmp;
-        fmax_tmp = ftemp;
-    }
-
-    if(tmax_tmp < tmin || tmin_tmp > tmax)
-      return false;
-    if(tmin_tmp > tmin) {
-        tmin = tmin_tmp;
-    }
-    if(tmax_tmp < tmax) {
-        tmax = tmax_tmp;
-    }
-
-    // Z slab: -Z=2, +Z=5
-    tmin_tmp = delta_min.z / direction.z;
-    tmax_tmp = delta_max.z / direction.z;
-    fmin_tmp = 2;
-    fmax_tmp = 5; // -Z, +Z
-    if(tmin_tmp > tmax_tmp) {
-        ttemp = tmin_tmp;
-        tmin_tmp = tmax_tmp;
-        tmax_tmp = ttemp;
-
-        ftemp = fmin_tmp;
-        fmin_tmp = fmax_tmp;
-        fmax_tmp = ftemp;
-    }
-
-    if(tmax_tmp < tmin || tmin_tmp > tmax)
-      return false;
-    if(tmin_tmp > tmin) {
-        tmin = tmin_tmp;
-    }
-    if(tmax_tmp < tmax) {
-        tmax = tmax_tmp;
-    }
-
-    return true;
+    tmin = max(max(t_small.x, t_small.y), t_small.z);
+    tmax = min(min(t_big.x, t_big.y), t_big.z);
+    return tmax >= tmin;
 }
-uvec3 posToCellPos(vec3 _pos) {
-    vec3 rel = floor((_pos - grid_pos) / grid_cell_dims);
-    return uvec3(max(rel, vec3(0.0)));
-}
-bool initRayTraversal(vec3 _ray_origin, vec3 _ray_direction, out RayTraversalInfo _infos) {
-    float t1, t2;
-    if(!intersectRayAABB(grid_pos, grid_pos + vec3(grid_size) * grid_cell_dims, _ray_origin, _ray_direction, t1, t2) || t2 < 0.)
+bool initRayTraversal(vec3 _ray_origin, vec3 _ray_dir, out VoxelTraversalData traversal) {
+    vec3 sgn = vec3(greaterThanEqual(_ray_dir, vec3(0.))) * 2. - 1.;
+    vec3 tiny = vec3(lessThan(abs(_ray_dir), vec3(RAY_DIR_EPS)));
+    _ray_dir = mix(_ray_dir, sgn * RAY_DIR_EPS, tiny);
+
+    vec3 grid_max = grid_pos + vec3(grid_size) * grid_cell_dims;
+
+    float t_enter, t_exit;
+    if (!intersectRayAABB(grid_pos, grid_max, _ray_origin, _ray_dir, t_enter, t_exit) || t_exit < 0.)
         return false;
+    t_enter = max(t_enter, 0.);
 
-    _infos.ray_origin = _ray_origin;
-    _infos.ray_dir = _ray_direction;
-    _infos.last_step_distance = 0.;
+    vec3 start_pos = _ray_origin + t_enter * _ray_dir;
+    vec3 end_pos = _ray_origin + t_exit * _ray_dir;
 
-    vec3 start = t1 < 0. ? _ray_origin : _ray_origin + t1 * _ray_direction;
-    vec3 end = _ray_origin + t2 * _ray_direction;
-    _infos.current_cell_pos = posToCellPos(start);
-    _infos.end_cell_pos = posToCellPos(end);
+    uvec3 max_cell = grid_size - uvec3(1);
+    traversal.current_cell_pos = min(posToCellPos(start_pos), max_cell);
+    traversal.end_cell_pos = min(posToCellPos(end_pos), max_cell);
 
-    for(int axis = 0; axis < 3; axis++) {
-        _infos.current_cell_pos[axis] = min(_infos.current_cell_pos[axis], grid_size[axis] - 1);
-        _infos.end_cell_pos[axis] = min(_infos.end_cell_pos[axis], grid_size[axis] - 1);
+    traversal.step = ivec3(sign(_ray_dir));
+    traversal.t_delta = abs(grid_cell_dims / _ray_dir);
 
-        if(_ray_direction[axis] == 0.) {
-            _infos.step[axis] = 0;
-            _infos.tdelta[axis] = _infos.t[axis] = FLT_MAX;
-        } else {
-            _infos.step[axis] = _ray_direction[axis] > 0. ? 1 : -1;
-            _infos.tdelta[axis] = abs(grid_cell_dims[axis] / _ray_direction[axis]);
-
-            float cell_min = grid_pos[axis] + _infos.current_cell_pos[axis] * grid_cell_dims[axis];
-            float next_boundary = cell_min + (_ray_direction[axis] > 0. ? grid_cell_dims[axis] : 0.);
-            _infos.t[axis] = (next_boundary - start[axis]) / _ray_direction[axis];
-        }
-    }
-
+    vec3 current_cell_center = grid_pos + vec3(traversal.current_cell_pos) * grid_cell_dims;
+    vec3 next_boundary = current_cell_center + vec3(greaterThan(_ray_dir, vec3(0.))) * grid_cell_dims;
+    traversal.t_next = (next_boundary - _ray_origin) / _ray_dir;
+    traversal.last_step_distance = 0.1;
     return true;
 }
-bool stepRayTraversal(inout RayTraversalInfo _infos) {
+bool stepRayTraversal(inout VoxelTraversalData traversal) {
     uint axis;
-    if(_infos.t.x < _infos.t.y && _infos.t.x < _infos.t.z)
-      axis = 0;
-    else if(_infos.t.y < _infos.t.z)
-      axis = 1;
-    else
-      axis = 2;
+    if (traversal.t_next.x < traversal.t_next.y && traversal.t_next.x < traversal.t_next.z) {
+        axis = 0u;
+    } else if (traversal.t_next.y < traversal.t_next.z) {
+        axis = 1u;
+    } else {
+        axis = 2u;
+    }
 
-    int next = int(_infos.current_cell_pos[axis]) + _infos.step[axis];
-    if(next < 0 || next >= int(grid_size[axis]))
+    int next = int(traversal.current_cell_pos[axis]) + traversal.step[axis];
+    if (next < 0 || next >= int(grid_size[axis])) {
         return false;
+    }
 
-    _infos.current_cell_pos[axis] = uint(next);
-    vec3 old_pos = _infos.ray_origin + _infos.ray_dir * _infos.t;
-    _infos.t[axis] += _infos.tdelta[axis];
-    vec3 new_pos = _infos.ray_origin + _infos.ray_dir * _infos.t;
-    _infos.last_step_distance = distance(old_pos, new_pos); // TODO: better way ?
+    traversal.current_cell_pos[axis] = uint(next);
+    traversal.last_step_distance = traversal.t_next[axis];
+    traversal.t_next[axis] += traversal.t_delta[axis];
+    traversal.last_step_distance = min(traversal.t_next.x, min(traversal.t_next.y, traversal.t_next.z)) - traversal.last_step_distance;
     return true;
 }
 
@@ -239,7 +174,7 @@ struct RayData {
 };
 uint cellPosToIndexZorder(uvec3 _pos) {
     uvec3 buff = _pos;
-    for(uint dim = 0; dim < 3; dim++) {
+    for (uint dim = 0; dim < 3; dim++) {
         buff[dim] = (buff[dim] | (buff[dim] << 16)) & uint(0xFF0000FF);
         buff[dim] = (buff[dim] | (buff[dim] << 8)) & uint(0x0F00F00F);
         buff[dim] = (buff[dim] | (buff[dim] << 4)) & uint(0xC30C30C3);
@@ -247,61 +182,59 @@ uint cellPosToIndexZorder(uvec3 _pos) {
     }
 
     uint res = 0;
-    for(uint dim = 0; dim < 3; dim++) res |= (buff[dim] << dim);
+    for (uint dim = 0; dim < 3; dim++)
+        res |= (buff[dim] << dim);
     return res;
 }
 
 float rayDensityTraversal(vec3 _ray_origin, vec3 _ray_direction) {
     float density = 0.;
-    RayTraversalInfo infos;
-    if(!initRayTraversal(_ray_origin, _ray_direction, infos))
+    VoxelTraversalData traversal;
+    if (!initRayTraversal(_ray_origin, _ray_direction, traversal))
         return density;
     do {
-        uint cell_index = cellPosToIndexZorder(infos.current_cell_pos);
-        density += grid_cell_densities[cell_index] * infos.last_step_distance;
-    } while (infos.current_cell_pos != infos.end_cell_pos && stepRayTraversal(infos));
+        uint cell_index = cellPosToIndexZorder(traversal.current_cell_pos);
+        density += grid_cell_densities[cell_index] * traversal.last_step_distance;
+    } while (traversal.current_cell_pos != traversal.end_cell_pos && stepRayTraversal(traversal));
     return density;
 }
 
-bool rayTraversal(vec3 _ray_origin, vec3 _ray_direction, out RayTraversalInfo infos, out RayData ray_data) {
+bool rayTraversal(vec3 _ray_origin, vec3 _ray_direction, out VoxelTraversalData traversal, out RayData ray_data) {
     ray_data.total_density = 0.;
     ray_data.total_light = vec3(0.);
 
-    if(!initRayTraversal(_ray_origin, _ray_direction, infos))
+    if (!initRayTraversal(_ray_origin, _ray_direction, traversal))
         return false;
 
     do {
-        uint cell_index = cellPosToIndexZorder(infos.current_cell_pos);
+        uint cell_index = cellPosToIndexZorder(traversal.current_cell_pos);
 
-        float density_along_step = grid_cell_densities[cell_index] * infos.last_step_distance;
+        float density_along_step = grid_cell_densities[cell_index] * traversal.last_step_distance;
         ray_data.total_density += density_along_step;
 
-        vec3 cell_pos = grid_pos + vec3(infos.current_cell_pos) * grid_cell_dims;
+        vec3 cell_pos = grid_pos + vec3(traversal.current_cell_pos) * grid_cell_dims;
         float sun_total_density = rayDensityTraversal(cell_pos, normalize(sun_pos - cell_pos));
         vec3 transmitted_sun_light = exp(-sun_total_density * scattering_coefs);
 
-        vec3 in_scattered_light = vec3(1.) * density_along_step * scattering_coefs;
+        vec3 in_scattered_light = transmitted_sun_light * density_along_step * scattering_coefs;
         vec3 view_ray_transmittance = exp(-ray_data.total_density * scattering_coefs);
         ray_data.total_light += in_scattered_light * view_ray_transmittance;
-    } while (infos.current_cell_pos != infos.end_cell_pos && stepRayTraversal(infos));
+    } while (traversal.current_cell_pos != traversal.end_cell_pos && stepRayTraversal(traversal));
 
     return true;
 }
 
 void main() {
     out_color = vec4(0., 0., 0., 1.);
-    for(uint sample_i = 0; sample_i < n_samples; sample_i++){
+    for (uint sample_i = 0; sample_i < n_samples; sample_i++) {
         uint sample_seed = sample_i * 2u;
-        vec2 sample_offset = n_samples == 1u ? vec2(0.) : vec2(
-            random(vec3(f_uv, float(sample_seed))),
-            random(vec3(f_uv, float(sample_seed + 1u)))
-        ) * inv_screen;
+        vec2 sample_offset = n_samples == 1u ? vec2(0.) : vec2(random(vec3(f_uv, float(sample_seed))), random(vec3(f_uv, float(sample_seed + 1u)))) * inv_screen;
         vec2 xy = screenToCamSpace(f_uv + sample_offset);
         vec3 ray_direction = normalize(applyTransformation(vec3(xy, near_plane), 1., viewproj_inverse) - cam_pos);
 
-        RayTraversalInfo infos;
+        VoxelTraversalData traversal;
         RayData ray_data;
-        if (rayTraversal(cam_pos, ray_direction, infos, ray_data))
+        if (rayTraversal(cam_pos, ray_direction, traversal, ray_data))
             out_color.xyz += ray_data.total_light;
     }
     out_color.xyz /= float(n_samples);

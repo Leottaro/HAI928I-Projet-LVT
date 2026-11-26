@@ -15,8 +15,6 @@ GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent) {
 
     m_update_timer.start();
     m_update_clock.restart();
-
-    m_grid.forEachCell([](size_t, const glm::uvec3 &, float &_density) { _density = static_cast<float>(rand()) / RAND_MAX; });
 }
 
 GLScene::~GLScene() {
@@ -77,9 +75,7 @@ void GLScene::initializeGL() {
 
     // Grid
     f->glGenBuffers(1, &m_grid_ssbo);
-    f->glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-    f->glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-    f->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
+    resizeGrid(m_grid.getSize().x, m_grid.getSize().y, m_grid.getSize().z);
 
     m_program->release();
 }
@@ -286,4 +282,13 @@ void GLScene::setCamElasticity(float _elasticity) {
     m_camera.refresh();
     emit camElasticityChanged(m_camera.m_elasticity);
     update();
+}
+void GLScene::resizeGrid(uint x, uint y, uint z) {
+    m_grid = FluidGrid({x, y, z});
+    m_grid.forEachCell([](size_t, const glm::uvec3 &, float &_density) { _density = static_cast<float>(rand()) / RAND_MAX; });
+
+    QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
+    f->glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
+    f->glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    f->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
 }

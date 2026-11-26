@@ -41,12 +41,12 @@ private:
     GLuint m_grid_ssbo{0};
 
     uint m_samples{1u};
-    QVector3D m_sun_pos{0., 1., 0.};
-    QVector3D m_scattering_coefs{0.32, 0.64, 0.85};
+    QVector3D m_sun_pos{0., 1.2, 0.};
+    QVector3D m_scattering_coefs{1., 0.5, 0.25};
 
     Camera m_camera;
     FluidGrid m_grid{
-        {64, 64, 64}
+        {32, 32, 32}
     };
     bool m_grid_updated{true};
 
@@ -57,10 +57,13 @@ public:
     QSize minimumSizeHint() const override;
     QSize sizeHint() const override;
 
-    const Camera& getCamera() const { return m_camera; }
     int getSamples() { return m_samples; }
     const QVector3D& getSunPos() const { return m_sun_pos; }
     const QVector3D& getScatteringCoefs() const { return m_scattering_coefs; }
+
+    const Camera& getCamera() const { return m_camera; }
+
+    const FluidGrid& getGrid() const { return m_grid; }
 
 protected:
     void initializeGL() override;
@@ -102,6 +105,8 @@ public slots:
     void setCamZoomRate(float _zoom_rate);
     void setCamZoomRange(const QVector2D& _zoom_range);
     void setCamElasticity(float _elasticity);
+
+    void resizeGrid(uint x, uint y, uint z);
 
 signals:
     void samplesChanged(int _samples);

@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <qpushbutton.h>
 
 #include <QAction>
 #include <QActionGroup>
@@ -15,7 +16,9 @@
 #include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPushButton>
 #include <QSpinBox>
+#include <QVector3D>
 #include <QWidget>
 #include <QWidgetAction>
 
@@ -27,6 +30,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     buildRenderMenu();
     buildCameraMenu();
+    buildGridMenu();
 
     setCentralWidget(m_scene);
 }
@@ -56,7 +60,7 @@ void MainWindow::buildRenderMenu() {
     std::array<QDoubleSpinBox*, 3> sun_pos_axis{};
     for (uint8_t axis = 0; axis < 3; axis++) {
         sun_pos_axis[axis] = new QDoubleSpinBox(sun_pos_widget);
-        sun_pos_axis[axis]->setRange(-std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
+        sun_pos_axis[axis]->setRange(-std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
         sun_pos_axis[axis]->setSingleStep(1.e-2);
         sun_pos_axis[axis]->setValue(m_scene->getSunPos()[axis]);
         connect(sun_pos_axis[axis], QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, axis](double v) { m_scene->setSunPosAxis(axis, v); });
@@ -80,8 +84,8 @@ void MainWindow::buildRenderMenu() {
     std::array<QDoubleSpinBox*, 3> scattering_axis{};
     for (uint8_t axis = 0; axis < 3; axis++) {
         scattering_axis[axis] = new QDoubleSpinBox(scattering_widget);
-        scattering_axis[axis]->setRange(-std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
-        scattering_axis[axis]->setSingleStep(1.e-2);
+        scattering_axis[axis]->setRange(-std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
+        scattering_axis[axis]->setSingleStep(1.e-1);
         scattering_axis[axis]->setValue(m_scene->getScatteringCoefs()[axis]);
         connect(scattering_axis[axis], QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, axis](double v) { m_scene->setScatteringCoefsAxis(axis, v); });
         scattering_layout->addWidget(scattering_axis[axis]);
@@ -129,7 +133,7 @@ void MainWindow::buildCameraMenu() {
     std::array<QDoubleSpinBox*, 3> pos_axis{};
     for (uint8_t axis = 0; axis < 3; axis++) {
         pos_axis[axis] = new QDoubleSpinBox(pos_widget);
-        pos_axis[axis]->setRange(-std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
+        pos_axis[axis]->setRange(-std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
         pos_axis[axis]->setSingleStep(1.e-2);
         pos_axis[axis]->setValue(m_scene->getCamera().m_cam_pos[axis]);
         connect(pos_axis[axis], QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, axis](double v) { m_scene->setCamPosAxis(axis, v); });
@@ -211,4 +215,32 @@ void MainWindow::buildCameraMenu() {
             type_actions[i]->blockSignals(false);
         }
     });
+}
+
+void MainWindow::buildGridMenu() {
+    QMenu* grid_menu = menuBar()->addMenu(tr("&Grid"));
+
+    grid_menu->addSection(tr("&Size"));
+
+    QWidget* size_coords_widget = new QWidget(grid_menu);
+    QHBoxLayout* size_coords_layout = new QHBoxLayout(size_coords_widget);
+    std::array<QSpinBox*, 3> size_axis{};
+    for (uint8_t axis = 0; axis < 3; axis++) {
+        size_axis[axis] = new QSpinBox(size_coords_widget);
+        size_axis[axis]->setRange(1, std::numeric_limits<int>::max());
+        size_axis[axis]->setValue(m_scene->getGrid().getSize()[axis]);
+        size_coords_layout->addWidget(size_axis[axis]);
+    }
+    auto* size_coords_action = new QWidgetAction(grid_menu);
+    size_coords_action->setDefaultWidget(size_coords_widget);
+    grid_menu->addAction(size_coords_action);
+
+    QWidget* validate_size_widget = new QWidget(grid_menu);
+    QFormLayout* validate_size_layout = new QFormLayout(validate_size_widget);
+    QPushButton* validate_size_button = new QPushButton("Resize Grid");
+    connect(validate_size_button, &QPushButton::pressed, this, [this, size_axis]() { this->m_scene->resizeGrid(size_axis[0]->value(), size_axis[1]->value(), size_axis[2]->value()); });
+    validate_size_layout->addRow(tr("&Resize Grid:"), validate_size_button);
+    auto* validate_size_action = new QWidgetAction(grid_menu);
+    validate_size_action->setDefaultWidget(validate_size_widget);
+    grid_menu->addAction(validate_size_action);
 }

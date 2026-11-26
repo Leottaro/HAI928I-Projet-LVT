@@ -16,4 +16,5 @@ public:
 private:
     void buildRenderMenu();
     void buildCameraMenu();
+    void buildGridMenu();
 };

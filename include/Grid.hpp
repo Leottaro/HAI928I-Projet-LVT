@@ -99,6 +99,6 @@ public:
     inline const GridBase<QVector3D>& velocities() const { return m_velocities_grid; }
 
     inline void update(float) {
-        forEachCell([&](size_t, const glm::uvec3&, float& density) { density *= (rand() % 2 == 0) ? 1.f / 0.95f : 0.95f; });
+        forEachCell([&](size_t, const glm::uvec3&, float& density) { density = std::clamp(density + ((rand() % 2 == 0) ? -1.e-2f : 1.e-2f), 0.f, 1.f); });
     }
 };
