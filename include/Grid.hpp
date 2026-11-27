@@ -79,17 +79,11 @@ public:
         return m_size.x * m_size.y * m_size.z;
     }
 
-    inline CellData getCell(const glm::uvec3& p_cell_pos) const { return m_data[cellPosToIndexZorder(p_cell_pos)]; }
-
-    inline CellData getCell(const glm::uvec3 & p_cell_pos){
+    inline CellData getCell(const glm::uvec3& p_cell_pos) const {
         return m_data[cellPosToIndexZorder(p_cell_pos)];
     }
 
     inline CellData getCell(size_t p_index) const{
-        return m_data[p_index];
-    }
-
-    inline CellData getCell(size_t p_index){
         return m_data[p_index];
     }
 

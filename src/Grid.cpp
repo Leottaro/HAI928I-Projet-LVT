@@ -42,10 +42,8 @@ glm::vec3 EulerianFluidGrid::sampleVelocity(const glm::vec3 & p_position) const 
 
 
 GridBase<float> EulerianFluidGrid::advect(const GridBase<float> & p_field, const float p_delta_time, const glm::vec3 & p_offset) const {
-    std::cout << "\t\tcreating new field" << std::endl;
     GridBase<float> new_field = GridBase<float>(p_field.getSize(), 0.f);
 
-    std::cout << "\t\tcomputing new field" << std::endl;
     new_field.forEachCell(
         [&](const glm::uvec3 & cell, float & quantity) {
             glm::vec3 velocity = sampleVelocity(glm::vec3(cell) + p_offset);
@@ -76,24 +74,26 @@ void replace(GridBase<float> & p_old_field, const GridBase<float> & p_new_field)
 
 
 void EulerianFluidGrid::advection(float p_delta_time) {
-    std::cout << "\tnew velocity" << std::endl;
-    std::cout << "x size : " << m_velocity_x.getSize().x << "," << m_velocity_x.getSize().y << "," << m_velocity_x.getSize().z << std::endl;
-    std::cout << "y size : " << m_velocity_y.getSize().x << "," << m_velocity_y.getSize().y << "," << m_velocity_y.getSize().z << std::endl;
-    std::cout << "z size : " << m_velocity_z.getSize().x << "," << m_velocity_z.getSize().y << "," << m_velocity_z.getSize().z << std::endl;
-    GridBase<float> new_velocity_x = advect(m_velocity_x, p_delta_time, glm::vec3(0.5f, 0.0f, 0.0f));
-    GridBase<float> new_velocity_y = advect(m_velocity_y, p_delta_time, glm::vec3(0.0f, 0.5f, 0.0f));
-    GridBase<float> new_velocity_z = advect(m_velocity_z, p_delta_time, glm::vec3(0.0f, 0.0f, 0.5f));
+    // GridBase<float> new_velocity_x = advect(m_velocity_x, p_delta_time, glm::vec3(0.5f, 0.0f, 0.0f));
+    // GridBase<float> new_velocity_y = advect(m_velocity_y, p_delta_time, glm::vec3(0.0f, 0.5f, 0.0f));
+    // GridBase<float> new_velocity_z = advect(m_velocity_z, p_delta_time, glm::vec3(0.0f, 0.0f, 0.5f));
 
-    std::cout << "\tdensity" << std::endl;
+
+    std::cout << "before advecting density" << std::endl;
+    std::cout << "density  (1, 1, 1) : " << m_density.getCell(glm::uvec3(1, 1, 1)) << std::endl;
+    std::cout << "velocity (1, 1, 1) : " << sampleVelocity(glm::vec3(1, 1, 1)).x << "," << sampleVelocity(glm::vec3(1, 1, 1)).y << "," << sampleVelocity(glm::vec3(1, 1, 1)).z << std::endl;
+
     replace(
         m_density,
         advect(m_density, p_delta_time, glm::vec3(0.f, 0.f, 0.f))
     );
 
-    std::cout << "\tstoring new velocity" << std::endl;
-    replace(m_velocity_x, new_velocity_x);
-    replace(m_velocity_y, new_velocity_y);
-    replace(m_velocity_z, new_velocity_z);
+    std::cout << "after advecting density" << std::endl;
+    std::cout << "density  (1, 1, 1) : " << m_density.getCell(glm::uvec3(1, 1, 1)) << std::endl;
+
+    // replace(m_velocity_x, new_velocity_x);
+    // replace(m_velocity_y, new_velocity_y);
+    // replace(m_velocity_z, new_velocity_z);
 }
 
 
@@ -218,17 +218,26 @@ void EulerianFluidGrid::endStep() {
     - Some housekeeping like boundary conditions, water volume correction, ect
 */
 void EulerianFluidGrid::update(float p_delta_time) {
-    std::cout << "update" << std::endl;
+    // advection(p_delta_time);
+    // integrateVelocity(p_delta_time);
+    // projection(p_delta_time);
+    // endStep();
 
-    std::cout << "advection" << std::endl;
-    advection(p_delta_time);
-    
-    std::cout << "integration" << std::endl;
-    integrateVelocity(p_delta_time);
+    std::cout << "density as grid: " << std::endl;
+    for (size_t z = 0 ; z < m_size.z ; z++){
+        for (size_t y = 0 ; y < m_size.y ; y++) {
+            for (size_t x = 0 ; x < m_size.x ; x++) {
+                std::cout << m_density.getCell(glm::uvec3(x, y, z)) << ", ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+    }
 
-    std::cout << "projection" << std::endl;
-    projection(p_delta_time);
+    std::cout << "density as vector: " << std::endl;
+    for (size_t i = 0 ; i < m_density.getCellCount() ; i++){
+        std::cout << m_density.getCell(i) << ", ";
+    }
+    std::cout << std::endl;
 
-    endStep();
-    std::cout << "update finished" << std::endl;
 }

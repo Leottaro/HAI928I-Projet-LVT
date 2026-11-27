@@ -7,7 +7,7 @@ QVector3D glm_to_QVector(const glm::vec3 & p_vector) {
     return QVector3D(p_vector.x, p_vector.y, p_vector.z);
 }
 
-GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({32, 32, 32}) {
+GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({4, 4, 4}) {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
