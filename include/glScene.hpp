@@ -38,16 +38,16 @@ private:
 
     std::unique_ptr<QOpenGLShaderProgram> m_program;
     QOpenGLVertexArrayObject m_vao;
-    GLuint m_grid_ssbo{0};
 
     uint m_samples{1u};
     QVector3D m_sun_pos{0., 1.2, 0.};
-    QVector3D m_scattering_coefs{1., 0.5, 0.25};
+    QVector3D m_scattering_coefs{0.16, 0.08, 0.04};
 
     Camera m_camera;
     FluidGrid m_grid{
         {32, 32, 32}
     };
+    GLuint m_grid_texture{0};
     bool m_grid_updated{true};
 
 public:
@@ -72,6 +72,7 @@ protected:
 
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
+    void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
 
     void wheelEvent(QWheelEvent* event) override;
@@ -86,6 +87,7 @@ private:
 
 public slots:
     void updateObjects();
+    bool recompileShaders();
 
     void setSamples(int _samples);
     void setSunPos(const QVector3D& _sun_pos);

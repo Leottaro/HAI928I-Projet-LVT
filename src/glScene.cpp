@@ -2,6 +2,9 @@
 
 #include "Grid.hpp"
 
+constexpr const char *VERTEX_SHADER_FILE = "./shaders/viewport.vert";
+constexpr const char *FRAGMENT_SHADER_FILE = "./shaders/ray_traversal.frag";
+
 GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent) {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
@@ -39,6 +42,9 @@ void GLScene::updateObjects() {
         emit camPosChanged(m_camera.m_cam_pos);
     }
 
+    if (m_pressed_keys.contains(Qt::Key::Key_R)) {
+        recompileShaders();
+    }
     m_grid.update(delta_time);
     m_grid_updated = true;
 
@@ -56,25 +62,17 @@ void GLScene::initializeGL() {
     // A core profile refuses to draw without a VAO bound, even when the vertices come from gl_VertexID.
     m_vao.create();
 
-    m_program.reset(new QOpenGLShaderProgram());
-    // Compile vertex shader
-    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Vertex, "./shaders/viewport.vert"))
-        close();
-
-    // Compile fragment shader
-    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, "./shaders/ray_traversal.frag"))
-        close();
-
-    // Link shader pipeline
-    if (!m_program->link())
-        close();
-
-    // Bind shader pipeline for use
-    if (!m_program->bind())
+    if (!recompileShaders())
         close();
 
     // Grid
-    f->glGenBuffers(1, &m_grid_ssbo);
+    f->glActiveTexture(GL_TEXTURE0);
+    f->glGenTextures(1, &m_grid_texture);
+    f->glBindTexture(GL_TEXTURE_3D, m_grid_texture);
+    f->glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    f->glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    f->glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    f->glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     resizeGrid(m_grid.getSize().x, m_grid.getSize().y, m_grid.getSize().z);
 
     m_program->release();
@@ -84,8 +82,8 @@ void GLScene::paintGL() {
     QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
 
     if (m_grid_updated) {
-        f->glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-        f->glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_grid.data().size() * sizeof(float), m_grid.data().data());
+        f->glBindTexture(GL_TEXTURE_3D, m_grid_texture);
+        f->glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, m_grid.getSize().x, m_grid.getSize().y, m_grid.getSize().z, 0, GL_RED, GL_FLOAT, m_grid.data().data());
         m_grid_updated = false;
     }
 
@@ -128,10 +126,23 @@ void GLScene::cleanupGL() {
     makeCurrent();
     QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
     m_program.reset(nullptr);
-    f->glDeleteBuffers(1, &m_grid_ssbo);
-    m_grid_ssbo = 0;
+    if (m_grid_texture != 0) {
+        f->glDeleteTextures(1, &m_grid_texture);
+        m_grid_texture = 0;
+    }
     m_vao.destroy();
     doneCurrent();
+}
+
+bool GLScene::recompileShaders() {
+    m_program.reset(new QOpenGLShaderProgram());
+    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Vertex, VERTEX_SHADER_FILE))
+        return false;
+    if (!m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, FRAGMENT_SHADER_FILE))
+        return false;
+    if (!m_program->link())
+        return false;
+    return m_program->bind();
 }
 
 void GLScene::keyPressEvent(QKeyEvent *_event) {
@@ -144,6 +155,11 @@ void GLScene::keyReleaseEvent(QKeyEvent *_event) {
     if (_event->isAutoRepeat())
         return;
     m_pressed_keys.remove(_event->key());
+}
+
+void GLScene::focusInEvent(QFocusEvent *_event) {
+    recompileShaders();
+    QOpenGLWidget::focusInEvent(_event);
 }
 
 void GLScene::focusOutEvent(QFocusEvent *_event) {
@@ -285,10 +301,11 @@ void GLScene::setCamElasticity(float _elasticity) {
 }
 void GLScene::resizeGrid(uint x, uint y, uint z) {
     m_grid = FluidGrid({x, y, z});
-    m_grid.forEachCell([](size_t, const glm::uvec3 &, float &_density) { _density = static_cast<float>(rand()) / RAND_MAX; });
-
-    QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
-    f->glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-    f->glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-    f->glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
+    m_grid.forEachCell([](size_t, const glm::uvec3 &, float &_density) { _density = 1.f; });
+    m_grid_updated = true;
+    // m_grid.forEachCell([x,y,z](size_t, const glm::uvec3 &_pos, float &_density) { 
+    //     float base_density = static_cast<float>((_pos.y * z + _pos.z) * _pos.z + _pos.x) / (x * y * z);
+    //     float random_factor = static_cast<float>(rand()) / RAND_MAX;
+    //     _density = std::clamp(base_density + 0.25f * (random_factor - 0.5f), 0.f, 1.f);
+    //  });
 }

@@ -61,7 +61,7 @@ void MainWindow::buildRenderMenu() {
     for (uint8_t axis = 0; axis < 3; axis++) {
         sun_pos_axis[axis] = new QDoubleSpinBox(sun_pos_widget);
         sun_pos_axis[axis]->setRange(-std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
-        sun_pos_axis[axis]->setSingleStep(1.e-2);
+        sun_pos_axis[axis]->setSingleStep(1.e-1);
         sun_pos_axis[axis]->setValue(m_scene->getSunPos()[axis]);
         connect(sun_pos_axis[axis], QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, axis](double v) { m_scene->setSunPosAxis(axis, v); });
         sun_pos_layout->addWidget(sun_pos_axis[axis]);
@@ -156,7 +156,7 @@ void MainWindow::buildCameraMenu() {
     QDoubleSpinBox* fov = new QDoubleSpinBox(cam_menu);
     fov->setDecimals(2);
     fov->setSuffix("°");
-    fov->setSingleStep(1.e-2);
+    fov->setSingleStep(1.e-1);
     fov->setRange(1., 179.);
     fov->setValue(glm::degrees(m_scene->getCamera().m_fovy));
     connect(fov, QOverload<double>::of(&QDoubleSpinBox::valueChanged), m_scene, &GLScene::setCamFovyDegrees);
@@ -181,7 +181,7 @@ void MainWindow::buildCameraMenu() {
     QFormLayout* mv_speed_layout = new QFormLayout(mv_speed_widget);
     QDoubleSpinBox* mv_speed = new QDoubleSpinBox(cam_menu);
     mv_speed->setDecimals(2);
-    mv_speed->setSingleStep(1.e-2);
+    mv_speed->setSingleStep(1.);
     mv_speed->setValue(m_scene->getCamera().m_free_cam_speed);
     connect(mv_speed, QOverload<double>::of(&QDoubleSpinBox::valueChanged), m_scene, &GLScene::setCamFreeCamSpeed);
     connect(m_scene, &GLScene::camFreeSpeedChanged, this, [mv_speed](float _speed) {

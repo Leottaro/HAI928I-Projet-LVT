@@ -1,17 +1,15 @@
-#version 430 core
+#version 460 core
 
 // ================================================================================================
 // ======================================== IN/OUT/UNIFORMS =======================================
 // ================================================================================================
-layout(binding = 0, std430) buffer z_order_grid_data_buff {
-    float grid_cell_densities[];
-};
 
 uniform float near_plane;
 uniform vec3 cam_pos;
 uniform mat4 viewproj_inverse;
 uniform vec2 inv_screen;
 
+uniform sampler3D grid_cell_densities;
 uniform uvec3 grid_size;
 uniform vec3 grid_pos;
 uniform vec3 grid_cell_dims;
@@ -27,54 +25,41 @@ out vec4 out_color;
 // ==================================== RAY GENERATION HELPERS ====================================
 // ================================================================================================
 
-// https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+// Source - https://stackoverflow.com/a/17479300
+// Posted by Spatial
+// Retrieved 2026-11-27, License - CC BY-SA 3.0
 // A single iteration of Bob Jenkins' One-At-A-Time hashing algorithm.
-uint hash(uint x) {
-    x += (x << 10u);
-    x ^= (x >> 6u);
-    x += (x << 3u);
-    x ^= (x >> 11u);
-    x += (x << 15u);
+uint hash( uint x ) {
+    x += ( x << 10u );
+    x ^= ( x >>  6u );
+    x += ( x <<  3u );
+    x ^= ( x >> 11u );
+    x += ( x << 15u );
     return x;
 }
-
 // Compound versions of the hashing algorithm I whipped together.
-uint hash(uvec2 v) {
-    return hash(v.x ^ hash(v.y));
-}
-uint hash(uvec3 v) {
-    return hash(v.x ^ hash(v.y) ^ hash(v.z));
-}
-uint hash(uvec4 v) {
-    return hash(v.x ^ hash(v.y) ^ hash(v.z) ^ hash(v.w));
-}
-
+uint hash( uvec2 v ) { return hash( v.x ^ hash(v.y)                         ); }
+uint hash( uvec3 v ) { return hash( v.x ^ hash(v.y) ^ hash(v.z)             ); }
+uint hash( uvec4 v ) { return hash( v.x ^ hash(v.y) ^ hash(v.z) ^ hash(v.w) ); }
 // Construct a float with half-open range [0:1] using low 23 bits.
 // All zeroes yields 0.0, all ones yields the next smallest representable value below 1.0.
-float floatConstruct(uint m) {
+float floatConstruct( uint m ) {
     const uint ieeeMantissa = 0x007FFFFFu; // binary32 mantissa bitmask
-    const uint ieeeOne = 0x3F800000u;      // 1.0 in IEEE binary32
+    const uint ieeeOne      = 0x3F800000u; // 1.0 in IEEE binary32
 
-    m &= ieeeMantissa; // Keep only mantissa bits (fractional part)
-    m |= ieeeOne;      // Add fractional part to 1.0
+    m &= ieeeMantissa;                     // Keep only mantissa bits (fractional part)
+    m |= ieeeOne;                          // Add fractional part to 1.0
 
-    float f = uintBitsToFloat(m); // Range [1:2]
-    return f - 1.0;               // Range [0:1]
+    float  f = uintBitsToFloat( m );       // Range [1:2]
+    return f - 1.0;                        // Range [0:1]
 }
-
 // Pseudo-random value in half-open range [0:1].
-float random(float x) {
-    return floatConstruct(hash(floatBitsToUint(x)));
-}
-float random(vec2 v) {
-    return floatConstruct(hash(floatBitsToUint(v)));
-}
-float random(vec3 v) {
-    return floatConstruct(hash(floatBitsToUint(v)));
-}
-float random(vec4 v) {
-    return floatConstruct(hash(floatBitsToUint(v)));
-}
+float random( float x ) { return floatConstruct(hash(floatBitsToUint(x))); }
+float random( vec2  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
+float random( vec3  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
+float random( vec4  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
+
+
 
 vec2 screenToCamSpace(vec2 screen_coords) {
     return vec2((screen_coords.x - 0.5) * 2., (0.5 - screen_coords.y) * 2.);
@@ -92,75 +77,91 @@ uvec3 posToCellPos(vec3 _pos) {
 // ===================================== RAY TRAVERSAL HELPERS ====================================
 // ================================================================================================
 
-const float RAY_DIR_EPS = 1.e-8;
+const float FLT_MAX = 3.40282347e38f;
 
 // https://www.researchgate.net/publication/2611491_A_Fast_Voxel_Traversal_Algorithm_for_Ray_Tracing
 struct VoxelTraversalData {
-    uvec3 current_cell_pos, end_cell_pos;
-    vec3 t_delta, t_next;
-    ivec3 step;
+    uvec3 current_cell_pos;
+    vec3 t_delta, t_max;
+    uvec3 step;
 
-    float last_step_distance;
+    vec3 origin, dir, inv_dir, sgn_dir;
+    uint stepped_axis;
+    float t_in, t_out;
 };
-bool intersectRayAABB(vec3 _aabb_min, vec3 _aabb_max, vec3 _ray_origin, vec3 _ray_dir, out float tmin, out float tmax) {
-    vec3 inv_dir = 1. / _ray_dir;
-    vec3 t0 = (_aabb_min - _ray_origin) * inv_dir;
-    vec3 t1 = (_aabb_max - _ray_origin) * inv_dir;
-
-    vec3 t_small = min(t0, t1);
-    vec3 t_big = max(t0, t1);
-
-    tmin = max(max(t_small.x, t_small.y), t_small.z);
-    tmax = min(min(t_big.x, t_big.y), t_big.z);
-    return tmax >= tmin;
-}
-bool initRayTraversal(vec3 _ray_origin, vec3 _ray_dir, out VoxelTraversalData traversal) {
-    vec3 sgn = vec3(greaterThanEqual(_ray_dir, vec3(0.))) * 2. - 1.;
-    vec3 tiny = vec3(lessThan(abs(_ray_dir), vec3(RAY_DIR_EPS)));
-    _ray_dir = mix(_ray_dir, sgn * RAY_DIR_EPS, tiny);
-
-    vec3 grid_max = grid_pos + vec3(grid_size) * grid_cell_dims;
-
-    float t_enter, t_exit;
-    if (!intersectRayAABB(grid_pos, grid_max, _ray_origin, _ray_dir, t_enter, t_exit) || t_exit < 0.)
-        return false;
-    t_enter = max(t_enter, 0.);
-
-    vec3 start_pos = _ray_origin + t_enter * _ray_dir;
-    vec3 end_pos = _ray_origin + t_exit * _ray_dir;
-
-    uvec3 max_cell = grid_size - uvec3(1);
-    traversal.current_cell_pos = min(posToCellPos(start_pos), max_cell);
-    traversal.end_cell_pos = min(posToCellPos(end_pos), max_cell);
-
-    traversal.step = ivec3(sign(_ray_dir));
-    traversal.t_delta = abs(grid_cell_dims / _ray_dir);
-
-    vec3 current_cell_center = grid_pos + vec3(traversal.current_cell_pos) * grid_cell_dims;
-    vec3 next_boundary = current_cell_center + vec3(greaterThan(_ray_dir, vec3(0.))) * grid_cell_dims;
-    traversal.t_next = (next_boundary - _ray_origin) / _ray_dir;
-    traversal.last_step_distance = 0.1;
-    return true;
+uint getStepAxis(in vec3 t_max) {
+    return t_max.x < t_max.y && t_max.x < t_max.z  ? 0u
+         : t_max.x >= t_max.y && t_max.y < t_max.z ? 1u
+                                                   : 2u;
 }
 bool stepRayTraversal(inout VoxelTraversalData traversal) {
-    uint axis;
-    if (traversal.t_next.x < traversal.t_next.y && traversal.t_next.x < traversal.t_next.z) {
-        axis = 0u;
-    } else if (traversal.t_next.y < traversal.t_next.z) {
-        axis = 1u;
-    } else {
-        axis = 2u;
-    }
+    traversal.stepped_axis = getStepAxis(traversal.t_max);
 
-    int next = int(traversal.current_cell_pos[axis]) + traversal.step[axis];
-    if (next < 0 || next >= int(grid_size[axis])) {
+    traversal.t_in = traversal.t_out;
+    traversal.t_out = traversal.t_max[traversal.stepped_axis];
+
+    traversal.current_cell_pos[traversal.stepped_axis] += traversal.step[traversal.stepped_axis];
+    traversal.t_max[traversal.stepped_axis] += traversal.t_delta[traversal.stepped_axis];
+    
+
+    // vec3 mask = vec3(0);
+    // mask[traversal.stepped_axis] = 1;
+    
+    // normal
+    // vec3 normal = -mask * traversal.sgn_dir;
+    
+    // depth
+    // float depth = (t_start + t_inside) * length(traversal.dir);
+    
+    // uv
+    // vec3 hit = traversal.origin + traversal.dir * t_inside;
+    // vec3 local_hit = hit - traversal.current_cell_pos;
+    // vec2 uv;
+    // if (traversal.stepped_axis == 0) {
+    //     uv = local_hit.yz;
+    // } else if (traversal.stepped_axis == 1) {
+    //     uv = local_hit.xz;
+    // } else {
+    //     uv = local_hit.xy;
+    // }
+
+    return !any(greaterThanEqual(traversal.current_cell_pos, grid_size));
+}
+bool initRayTraversal(vec3 _ray_origin, vec3 _ray_dir, out VoxelTraversalData traversal) {
+    traversal.origin = _ray_origin;
+    traversal.dir = _ray_dir;
+    traversal.inv_dir = clamp(1. / _ray_dir, vec3(-FLT_MAX), vec3(FLT_MAX));
+    traversal.sgn_dir = sign(traversal.inv_dir);
+
+    // Grid AABB intersection
+    const vec3 grid_max = (grid_pos+grid_size*grid_cell_dims);
+    vec3 t1 = (grid_pos - _ray_origin) * traversal.inv_dir;
+    vec3 t2 = (grid_max - _ray_origin) * traversal.inv_dir;
+
+    vec3 t_mins = min(t1, t2);
+    vec3 t_maxs = max(t1, t2);
+
+    float t_enter = max(max(t_mins.x, t_mins.y), t_mins.z);
+    float t_exit = min(min(t_maxs.x, t_maxs.y), t_maxs.z);
+    if (t_enter > t_exit) 
         return false;
-    }
+    
+    traversal.stepped_axis = t_enter < 0. ? 3 : uint(dot(vec3(0, 1, 2), vec3(equal(t_mins, vec3(t_enter)))));
+    t_enter = max(t_enter, 0);
 
-    traversal.current_cell_pos[axis] = uint(next);
-    traversal.last_step_distance = traversal.t_next[axis];
-    traversal.t_next[axis] += traversal.t_delta[axis];
-    traversal.last_step_distance = min(traversal.t_next.x, min(traversal.t_next.y, traversal.t_next.z)) - traversal.last_step_distance;
+    // ray traversal initialisation
+    vec3 enter_pos = _ray_origin + _ray_dir * t_enter;
+    vec3 enter_pos_grid_ref = (enter_pos - grid_pos) / grid_cell_dims;
+    traversal.current_cell_pos = uvec3(clamp(floor(enter_pos_grid_ref), vec3(0), vec3(grid_size - 1)));
+    traversal.t_max = (traversal.current_cell_pos + 0.5 * (1 + traversal.sgn_dir) - enter_pos_grid_ref) * traversal.inv_dir;
+
+    traversal.step = uvec3(ivec3(traversal.sgn_dir));
+    traversal.t_delta = traversal.inv_dir * traversal.sgn_dir;
+    
+    traversal.stepped_axis = getStepAxis(traversal.t_max);
+    traversal.t_in = 0.;
+    traversal.t_out = traversal.t_max[traversal.stepped_axis];
+
     return true;
 }
 
@@ -193,9 +194,9 @@ float rayDensityTraversal(vec3 _ray_origin, vec3 _ray_direction) {
     if (!initRayTraversal(_ray_origin, _ray_direction, traversal))
         return density;
     do {
-        uint cell_index = cellPosToIndexZorder(traversal.current_cell_pos);
-        density += grid_cell_densities[cell_index] * traversal.last_step_distance;
-    } while (traversal.current_cell_pos != traversal.end_cell_pos && stepRayTraversal(traversal));
+        float density_along_step = texture(grid_cell_densities, vec3(traversal.current_cell_pos) / vec3(grid_size)).r * (traversal.t_out - traversal.t_in);
+        density += density_along_step;
+    } while (stepRayTraversal(traversal));
     return density;
 }
 
@@ -207,11 +208,12 @@ bool rayTraversal(vec3 _ray_origin, vec3 _ray_direction, out VoxelTraversalData 
         return false;
 
     do {
-        uint cell_index = cellPosToIndexZorder(traversal.current_cell_pos);
+        // TODO: reflection, refraction, etc...
 
-        float density_along_step = grid_cell_densities[cell_index] * traversal.last_step_distance;
+        float density_along_step = texture(grid_cell_densities, vec3(traversal.current_cell_pos) / vec3(grid_size)).r * (traversal.t_out - traversal.t_in);
         ray_data.total_density += density_along_step;
 
+        // TODO: sample multiple point along view ray
         vec3 cell_pos = grid_pos + vec3(traversal.current_cell_pos) * grid_cell_dims;
         float sun_total_density = rayDensityTraversal(cell_pos, normalize(sun_pos - cell_pos));
         vec3 transmitted_sun_light = exp(-sun_total_density * scattering_coefs);
@@ -219,7 +221,7 @@ bool rayTraversal(vec3 _ray_origin, vec3 _ray_direction, out VoxelTraversalData 
         vec3 in_scattered_light = transmitted_sun_light * density_along_step * scattering_coefs;
         vec3 view_ray_transmittance = exp(-ray_data.total_density * scattering_coefs);
         ray_data.total_light += in_scattered_light * view_ray_transmittance;
-    } while (traversal.current_cell_pos != traversal.end_cell_pos && stepRayTraversal(traversal));
+    } while (stepRayTraversal(traversal));
 
     return true;
 }
