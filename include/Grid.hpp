@@ -9,8 +9,12 @@
 
 #include <QVector3D>
 
-
-
+static constexpr uint64_t ZORDER_3D_LIMIT = 0b0000000000000000000000000000000000000000001111111111111111111111ull;
+static constexpr uint64_t ZORDER_3D_MASK1 = 0b1111111111111111000000000000000000000000000000001111111111111111ull;
+static constexpr uint64_t ZORDER_3D_MASK2 = 0b0000000011111111000000000000000011111111000000000000000011111111ull;
+static constexpr uint64_t ZORDER_3D_MASK3 = 0b1111000000001111000000001111000000001111000000001111000000001111ull;
+static constexpr uint64_t ZORDER_3D_MASK4 = 0b0011000011000011000011000011000011000011000011000011000011000011ull;
+static constexpr uint64_t ZORDER_3D_MASK5 = 0b1001001001001001001001001001001001001001001001001001001001001001ull;
 
 // Linear interpolation from p_from to p_to
 template <typename T>
@@ -43,18 +47,18 @@ public:
     //
 
     // Convert a cell position as a uvec3 to its index in the stored m_data vector
-    inline uint cellPosToIndexZorder(glm::uvec3 p_cell_pos) const {
+    inline uint cellPosToIndexZorder(glm::u64vec3 _cell_pos) const {
         for (uint dim = 0; dim < 3; dim++) {
-            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 1)) & uint(0x00FF00FF);
-            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 2)) & uint(0x0F0F0F0F);
-            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 4)) & uint(0x33333333);
-            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 8)) & uint(0x55555555);
+            assert(_cell_pos[dim] <= ZORDER_3D_LIMIT);
+            _cell_pos[dim] &= ZORDER_3D_LIMIT;
+            _cell_pos[dim] = (_cell_pos[dim] | (_cell_pos[dim] << 32)) & ZORDER_3D_MASK1;
+            _cell_pos[dim] = (_cell_pos[dim] | (_cell_pos[dim] << 16)) & ZORDER_3D_MASK2;
+            _cell_pos[dim] = (_cell_pos[dim] | (_cell_pos[dim] << 8)) & ZORDER_3D_MASK3;
+            _cell_pos[dim] = (_cell_pos[dim] | (_cell_pos[dim] << 4)) & ZORDER_3D_MASK4;
+            _cell_pos[dim] = (_cell_pos[dim] | (_cell_pos[dim] << 2)) & ZORDER_3D_MASK5;
         }
 
-        uint res = 0;
-        for (uint dim = 0; dim < 3; dim++)
-            res |= (p_cell_pos[dim] << dim);
-        return res;
+        return _cell_pos.x | (_cell_pos.y << 1) | (_cell_pos.z << 2);
     }
 
     //       ___     _   _                __       ___      _   _
