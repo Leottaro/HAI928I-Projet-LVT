@@ -45,10 +45,10 @@ public:
     // Convert a cell position as a uvec3 to its index in the stored m_data vector
     inline uint cellPosToIndexZorder(glm::uvec3 p_cell_pos) const {
         for (uint dim = 0; dim < 3; dim++) {
-            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 16)) & uint(0xFF0000FF);
-            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 8)) & uint(0x0F00F00F);
-            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 4)) & uint(0xC30C30C3);
-            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 2)) & uint(0x49249249);
+            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 1)) & uint(0x00FF00FF);
+            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 2)) & uint(0x0F0F0F0F);
+            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 4)) & uint(0x33333333);
+            p_cell_pos[dim] = (p_cell_pos[dim] | (p_cell_pos[dim] << 8)) & uint(0x55555555);
         }
 
         uint res = 0;
@@ -79,9 +79,7 @@ public:
         return m_size.x * m_size.y * m_size.z;
     }
 
-    inline CellData getCell(const glm::uvec3 & p_cell_pos) const{
-        return m_data[cellPosToIndexZorder(p_cell_pos)];
-    }
+    inline CellData getCell(const glm::uvec3& p_cell_pos) const { return m_data[cellPosToIndexZorder(p_cell_pos)]; }
 
     inline CellData getCell(const glm::uvec3 & p_cell_pos){
         return m_data[cellPosToIndexZorder(p_cell_pos)];
