@@ -1,8 +1,13 @@
 #include "glScene.hpp"
 
 #include "Grid.hpp"
+#include <qvector3d.h>
 
-GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({64, 64, 64}) {
+QVector3D glm_to_QVector(const glm::vec3 & p_vector) {
+    return QVector3D(p_vector.x, p_vector.y, p_vector.z);
+}
+
+GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({32, 32, 32}) {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
@@ -17,7 +22,11 @@ GLScene::GLScene(QWidget *parent) : QOpenGLWidget(parent), m_grid({64, 64, 64}) 
     m_update_timer.start();
     m_update_clock.restart();
 
-    m_grid.forEachCell([](size_t, const glm::uvec3 &, float &_density) { _density = static_cast<float>(rand()) / RAND_MAX; });
+    // Initialize each cell with random density
+
+    m_grid.setWorldPos(glm::vec3(-1.f, -1.f, -1.f));
+    m_grid.setWorldCellSize(2.f / glm::vec3(m_grid.getSize()));
+    m_grid.randomizeDensity();
 }
 
 GLScene::~GLScene() {
@@ -62,7 +71,7 @@ void GLScene::initializeGL() {
     // Grid
     glGenBuffers(1, &m_grid_ssbo);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.data().size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, m_grid.getDensity().getDataVector().size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_grid_ssbo);
 
     m_program->release();
@@ -78,7 +87,7 @@ void GLScene::updateObjects() {
 
     m_grid.update(delta_time);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid_ssbo);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_grid.data().size() * sizeof(float), m_grid.data().data());
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_grid.getDensity().getCellCount() * sizeof(float), m_grid.getDensity().getDataVector().data());
 
     update();
     m_update_clock.restart();
@@ -92,8 +101,8 @@ void GLScene::paintGL() {
 
     // Display
     glUniform3ui(m_program->uniformLocation("grid_size"), m_grid.getSize()[0], m_grid.getSize()[1], m_grid.getSize()[2]);
-    m_program->setUniformValue("grid_pos", m_grid.getPos());
-    m_program->setUniformValue("grid_cell_dims", m_grid.getCellDims());
+    m_program->setUniformValue("grid_pos", glm_to_QVector(m_grid.getWorldPos()));
+    m_program->setUniformValue("grid_cell_dims", glm_to_QVector(m_grid.getWorldCellSize()));
     m_program->setUniformValue("n_samples", m_samples);
 
     // Camera

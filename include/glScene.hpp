@@ -35,7 +35,7 @@ private:
     uint m_samples{1};
 
     Camera m_camera;
-    FluidGrid m_grid;
+    EulerianFluidGrid m_grid;
 
 public:
     explicit GLScene(QWidget* parent = nullptr);
